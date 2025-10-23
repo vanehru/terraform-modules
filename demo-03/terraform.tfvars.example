@@ -1,0 +1,41 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and customize the values for your environment
+
+# Basic Infrastructure Configuration
+resource_group_name = "rg-terraform-demo-dev"
+location           = "East US"
+environment        = "dev"
+project_name       = "terraform-demo"
+
+# VM Configuration
+admin_username = "azureadmin"
+vm_size       = "Standard_B2s"
+
+# SSH Configuration (uncomment and provide your SSH public key)
+# ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA... your-email@example.com"
+
+# Password Configuration (uncomment if using password authentication)
+# admin_password = "<REDACTED - provide at runtime or via excluded tfvars>"
+
+# Custom Data Script (uncomment if using custom data)
+# custom_data = <<-EOF
+# #!/bin/bash
+# apt-get update
+# apt-get install -y nginx
+# systemctl start nginx
+# systemctl enable nginx
+# EOF
+
+# VM Type Selection (Choose ONE of the following):
+# Options: "basic_ssh", "basic_password", "custom_data", "public_ip", "load_balanced"
+vm_type = "basic_ssh"
+
+# Legacy Module Configuration - Enable/Disable VMs (for backward compatibility)
+enable_basic_ssh_vm      = true
+enable_basic_password_vm = false
+enable_custom_data_vm    = false
+enable_public_ip_vm      = true
+enable_load_balanced_vm  = false
+
+# Load Balancer Configuration
+load_balanced_vm_count = 3

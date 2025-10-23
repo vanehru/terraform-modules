@@ -1,0 +1,17 @@
+# Ignore terraform local state and sensitive files
+*.tfstate
+*.tfstate.*
+*.tfvars
+# keep example tfvars in repo, but ignore real ones
+!*.tfvars.example
+
+# SSH keys and certs
+id_rsa
+id_rsa.pub
+*.pem
+*.key
+*.p12
+
+# OS files
+.DS_Store
+node_modules/

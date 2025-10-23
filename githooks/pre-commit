@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Simple pre-commit hook to scan staged changes for common secrets
+# Installation: copy this file to .git/hooks/pre-commit and make it executable:
+#   cp githooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+STAGED_FILES=$(git diff --cached --name-only)
+if [ -z "$STAGED_FILES" ]; then
+  exit 0
+fi
+
+PATTERNS=("password" "admin_password" "secret" "BEGIN PRIVATE KEY" "BEGIN RSA" "AKIA[0-9A-Z]{16}")
+
+BLOCK=0
+for file in $STAGED_FILES; do
+  # ignore binary files
+  if file "$file" | grep -q "text"; then
+    for p in "${PATTERNS[@]}"; do
+      if git show :"$file" | grep -Ei --line-number "$p" >/dev/null 2>&1; then
+        echo "Potential secret found in staged file: $file (pattern: $p)"
+        git --no-pager diff --cached -- "$file" | sed -n '1,120p'
+        BLOCK=1
+      fi
+    done
+  fi
+done
+
+if [ $BLOCK -eq 1 ]; then
+  echo "Commit blocked. Remove secrets from staged files or move them to excluded tfvars and try again."
+  exit 1
+fi
+
+exit 0
