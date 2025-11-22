@@ -5,7 +5,7 @@ echo "Configuring Backend Function App..."
 
 # Get Terraform outputs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../rpg-aiapp-infra"
+cd "$SCRIPT_DIR/../infra"
 
 KEYVAULT_URL=$(terraform output -raw keyvault_url)
 FUNCTION_APP_NAME=$(terraform output -raw function_app_name)

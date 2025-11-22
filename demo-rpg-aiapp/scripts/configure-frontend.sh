@@ -5,12 +5,12 @@ echo "Configuring Frontend..."
 
 # Get Terraform outputs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../rpg-aiapp-infra"
+cd "$SCRIPT_DIR/../infra"
 
 FUNCTION_APP_URL=$(terraform output -raw function_app_url)
 
 # Update production environment file
-cat > "$SCRIPT_DIR/../rpg-aiapp-dev/rpg-frontend-main/.env.production" <<EOF
+cat > "$SCRIPT_DIR/../dev/rpg-frontend-main/.env.production" <<EOF
 VUE_APP_API_BASE_URL=${FUNCTION_APP_URL}/api
 VUE_APP_ENVIRONMENT=production
 EOF
@@ -22,7 +22,7 @@ echo "API URL: ${FUNCTION_APP_URL}/api"
 read -p "Build frontend now? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    cd "$SCRIPT_DIR/../rpg-aiapp-dev/rpg-frontend-main"
+    cd "$SCRIPT_DIR/../dev/rpg-frontend-main"
     npm install
     npm run build
     echo "✅ Frontend built successfully"

@@ -7,7 +7,7 @@ echo "==================================="
 
 # Navigate to Terraform directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../rpg-aiapp-infra"
+cd "$SCRIPT_DIR/../infra"
 
 # Get all outputs
 echo "Fetching infrastructure details..."
@@ -50,7 +50,7 @@ echo "✅ Backend configured successfully"
 # Configure Frontend
 echo ""
 echo "Configuring Frontend..."
-cat > "$SCRIPT_DIR/../rpg-aiapp-dev/rpg-frontend-main/.env.production" <<EOF
+cat > "$SCRIPT_DIR/../dev/rpg-frontend-main/.env.production" <<EOF
 VUE_APP_API_BASE_URL=${FUNCTION_APP_URL}/api
 VUE_APP_ENVIRONMENT=production
 EOF
@@ -60,7 +60,7 @@ echo "✅ Frontend environment file created"
 # Update backend local settings example
 echo ""
 echo "Updating backend local settings example..."
-cat > "$SCRIPT_DIR/../rpg-aiapp-dev/rpg-backend-python/local.settings.json.example" <<EOF
+cat > "$SCRIPT_DIR/../dev/rpg-backend-python/local.settings.json.example" <<EOF
 {
   "IsEncrypted": false,
   "Values": {
@@ -85,7 +85,7 @@ read -p "Do you want to build and deploy the frontend now? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Building frontend..."
-    cd "$SCRIPT_DIR/../rpg-aiapp-dev/rpg-frontend-main"
+    cd "$SCRIPT_DIR/../dev/rpg-frontend-main"
     npm install
     npm run build
     echo "✅ Frontend built successfully"
