@@ -1,14 +1,26 @@
 resource "azurerm_resource_group" "rg" {
-  name     = "example-rg"
-  location = "East US"
+  name     = var.azurerm_resource_group_name
+  location = var.azurerm_resource_group_location
+
+  tags = {
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
+  }
 }
 
 # VNet and subnets
 resource "azurerm_virtual_network" "vnet" {
-  name                = "example-vnet"
-  address_space       = ["10.0.0.0/16"]
+  name                = "demo-rpg-vnet"
+  address_space       = var.vnet_address_space
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
+  }
 }
 
 # Subnet 1: Application Subnet (Static Web App + Function App)
@@ -16,10 +28,10 @@ resource "azurerm_subnet" "app_subnet" {
   name                 = "app-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.1.0/24"]
+  address_prefixes     = [var.app_subnet_cidr]
 
   service_endpoints = ["Microsoft.Web"]
-  
+
   delegation {
     name = "delegation"
     service_delegation {
@@ -36,8 +48,8 @@ resource "azurerm_subnet" "storage_subnet" {
   name                 = "storage-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.2.0/24"]
-  
+  address_prefixes     = [var.storage_subnet_cidr]
+
   service_endpoints = ["Microsoft.Storage"]
 }
 
@@ -46,7 +58,7 @@ resource "azurerm_subnet" "keyvault_subnet" {
   name                 = "keyvault-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.3.0/24"]
+  address_prefixes     = [var.keyvault_subnet_cidr]
 }
 
 # Subnet 4: Database Subnet (SQL Database Private Endpoint)
@@ -54,8 +66,8 @@ resource "azurerm_subnet" "database_subnet" {
   name                 = "database-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.4.0/24"]
-  
+  address_prefixes     = [var.database_subnet_cidr]
+
   service_endpoints = ["Microsoft.Sql"]
 }
 
@@ -64,7 +76,7 @@ resource "azurerm_subnet" "openai_subnet" {
   name                 = "openai-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.5.0/24"]
+  address_prefixes     = [var.openai_subnet_cidr]
 }
 
 # Subnet 6: Deployment Subnet (Cloud Shell Container Instance)
@@ -72,7 +84,7 @@ resource "azurerm_subnet" "deployment_subnet" {
   name                 = "deployment-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
-  address_prefixes     = ["10.0.6.0/24"]
+  address_prefixes     = [var.deployment_subnet_cidr]
 
   delegation {
     name = "container-delegation"
@@ -95,19 +107,19 @@ resource "random_password" "sql_admin_password" {
 module "function_app" {
   source = "./modules/function-app"
 
-  function_app_name              = "example-func"
-  location                       = azurerm_resource_group.rg.location
-  resource_group_name            = azurerm_resource_group.rg.name
-  storage_account_name           = "examplestoracc123"
-  storage_account_tier           = "Standard"
+  function_app_name                = "demo-rpg-func"
+  location                         = azurerm_resource_group.rg.location
+  resource_group_name              = azurerm_resource_group.rg.name
+  storage_account_name             = "demo-rpgstoracc123"
+  storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
-  app_service_plan_name          = "example-appserviceplan"
-  app_service_plan_sku           = "P1v2"
-  create_managed_identity        = true
-  vnet_route_all_enabled         = true
-  enable_vnet_integration        = true
-  vnet_integration_subnet_id     = azurerm_subnet.app_subnet.id
-  
+  app_service_plan_name            = "demo-rpg-appserviceplan"
+  app_service_plan_sku             = "P1v2"
+  create_managed_identity          = true
+  vnet_route_all_enabled           = true
+  enable_vnet_integration          = true
+  vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
+
   # Storage Account Private Endpoint
   storage_public_network_access_enabled = false
   storage_network_default_action        = "Deny"
@@ -118,15 +130,17 @@ module "function_app" {
   storage_virtual_network_id            = azurerm_virtual_network.vnet.id
 
   app_settings = {
-    "CUSTOM_SETTING"          = "value"
-    "KEY_VAULT_URI"           = module.key_vault.key_vault_uri
-    "SQL_CONNECTION_SECRET"   = "sql-connection-string"
-    "OPENAI_ENDPOINT_SECRET"  = "openai-endpoint"
-    "OPENAI_KEY_SECRET"       = "openai-key"
+    "CUSTOM_SETTING"         = "value"
+    "KEY_VAULT_URI"          = module.key_vault.key_vault_uri
+    "SQL_CONNECTION_SECRET"  = "sql-connection-string"
+    "OPENAI_ENDPOINT_SECRET" = "openai-endpoint"
+    "OPENAI_KEY_SECRET"      = "openai-key"
   }
 
   tags = {
-    environment = "development"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
   }
 }
 
@@ -134,16 +148,16 @@ module "function_app" {
 module "key_vault" {
   source = "./modules/key-vault"
 
-  key_vault_name                = "examplekv123"
-  location                      = azurerm_resource_group.rg.location
-  resource_group_name           = azurerm_resource_group.rg.name
-  tenant_id                     = data.azurerm_client_config.current.tenant_id
-  sku_name                      = "standard"
-  purge_protection_enabled      = false
-  network_acls_default_action   = "Deny"
-  network_acls_bypass           = "AzureServices"
-  allowed_subnet_ids            = [azurerm_subnet.app_subnet.id, azurerm_subnet.keyvault_subnet.id]
-  
+  key_vault_name              = "demo-rpgkv123"
+  location                    = azurerm_resource_group.rg.location
+  resource_group_name         = azurerm_resource_group.rg.name
+  tenant_id                   = data.azurerm_client_config.current.tenant_id
+  sku_name                    = "standard"
+  purge_protection_enabled    = false
+  network_acls_default_action = "Deny"
+  network_acls_bypass         = "AzureServices"
+  allowed_subnet_ids          = [azurerm_subnet.app_subnet.id, azurerm_subnet.keyvault_subnet.id]
+
   access_policies = [
     {
       object_id          = module.function_app.function_app_identity_principal_id
@@ -170,13 +184,15 @@ module "key_vault" {
     module.openai
   ]
 
-  enable_private_endpoint      = true
-  private_endpoint_subnet_id   = azurerm_subnet.keyvault_subnet.id
-  create_private_dns_zone      = true
-  virtual_network_id           = azurerm_virtual_network.vnet.id
+  enable_private_endpoint    = true
+  private_endpoint_subnet_id = azurerm_subnet.keyvault_subnet.id
+  create_private_dns_zone    = true
+  virtual_network_id         = azurerm_virtual_network.vnet.id
 
   tags = {
-    environment = "development"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
   }
 }
 
@@ -184,26 +200,28 @@ module "key_vault" {
 module "sql_database" {
   source = "./modules/sql-database"
 
-  sql_server_name                = "rpg-gaming-sql-server"
-  database_name                  = "rpg-gaming-db"
-  location                       = azurerm_resource_group.rg.location
-  resource_group_name            = azurerm_resource_group.rg.name
-  admin_username                 = "sqladmin"
-  admin_password                 = random_password.sql_admin_password.result
-  sql_server_version             = "12.0"
-  minimum_tls_version            = "1.2"
-  public_network_access_enabled  = false
-  sku_name                       = "GP_S_Gen5_2"
-  max_size_gb                    = 32
-  allow_azure_services           = true
-  subnet_id                      = azurerm_subnet.database_subnet.id
-  enable_private_endpoint        = true
-  private_endpoint_subnet_id     = azurerm_subnet.database_subnet.id
-  create_private_dns_zone        = true
-  virtual_network_id             = azurerm_virtual_network.vnet.id
+  sql_server_name               = "rpg-gaming-sql-server"
+  database_name                 = "rpg-gaming-db"
+  location                      = azurerm_resource_group.rg.location
+  resource_group_name           = azurerm_resource_group.rg.name
+  admin_username                = "sqladmin"
+  admin_password                = random_password.sql_admin_password.result
+  sql_server_version            = "12.0"
+  minimum_tls_version           = "1.2"
+  public_network_access_enabled = false
+  sku_name                      = "GP_S_Gen5_2"
+  max_size_gb                   = 32
+  allow_azure_services          = true
+  subnet_id                     = azurerm_subnet.database_subnet.id
+  enable_private_endpoint       = true
+  private_endpoint_subnet_id    = azurerm_subnet.database_subnet.id
+  create_private_dns_zone       = true
+  virtual_network_id            = azurerm_virtual_network.vnet.id
 
   tags = {
-    environment = "development"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
   }
 }
 
@@ -238,7 +256,9 @@ module "openai" {
   }
 
   tags = {
-    environment = "development"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
   }
 }
 
@@ -254,7 +274,9 @@ module "static_web_app" {
   function_app_id     = module.function_app.function_app_id
 
   tags = {
-    environment = "development"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
   }
 }
 
@@ -265,44 +287,26 @@ resource "azurerm_storage_account" "cloud_shell" {
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
-  
+
   network_rules {
-    default_action             = "Allow"  # Cloud Shell needs internet access
+    default_action             = "Allow" # Cloud Shell needs internet access
     bypass                     = ["AzureServices"]
     virtual_network_subnet_ids = [azurerm_subnet.deployment_subnet.id]
   }
 
   tags = {
-    environment = "development"
-    purpose     = "cloud-shell-storage"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
+    purpose       = "cloud-shell-storage"
   }
 }
 
 # File share for Cloud Shell persistence
 resource "azurerm_storage_share" "cloud_shell" {
-  name                 = "cloudshell"
-  storage_account_name = azurerm_storage_account.cloud_shell.name
-  quota                = 6  # 6 GB for Cloud Shell
-}
-
-# Network Profile for Cloud Shell Container Instance
-resource "azurerm_network_profile" "cloud_shell" {
-  name                = "cloudshell-network-profile"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  container_network_interface {
-    name = "cloudshell-nic"
-
-    ip_configuration {
-      name      = "cloudshell-ipconfig"
-      subnet_id = azurerm_subnet.deployment_subnet.id
-    }
-  }
-
-  tags = {
-    environment = "development"
-  }
+  name               = "cloudshell"
+  storage_account_id = azurerm_storage_account.cloud_shell.id
+  quota              = 6 # 6 GB for Cloud Shell
 }
 
 # Container Instance for Cloud Shell VNet relay
@@ -311,9 +315,9 @@ resource "azurerm_container_group" "cloud_shell_relay" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   os_type             = "Linux"
-  
+
   # Network configuration
-  network_profile_id = azurerm_network_profile.cloud_shell.id
+  subnet_ids = [azurerm_subnet.deployment_subnet.id]
 
   # Identity for Azure authentication
   identity {
@@ -340,67 +344,13 @@ resource "azurerm_container_group" "cloud_shell_relay" {
   }
 
   tags = {
-    environment = "development"
-    purpose     = "cloud-shell-vnet-relay"
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
+    purpose       = "cloud-shell-vnet-relay"
   }
 }
 
 # Get Azure AD info for access policies
 data "azurerm_client_config" "current" {}
 
-# Outputs
-output "cloud_shell_storage_account" {
-  description = "Storage account name for Cloud Shell"
-  value       = azurerm_storage_account.cloud_shell.name
-}
-
-output "cloud_shell_file_share" {
-  description = "File share name for Cloud Shell persistence"
-  value       = azurerm_storage_share.cloud_shell.name
-}
-
-output "cloud_shell_container_ip" {
-  description = "Private IP of Cloud Shell relay container"
-  value       = azurerm_container_group.cloud_shell_relay.ip_address
-}
-
-output "deployment_instructions" {
-  description = "How to use Cloud Shell for deployment"
-  value       = <<-EOT
-    1. Open Azure Cloud Shell: https://shell.azure.com
-    2. Configure Cloud Shell to use this VNet:
-       az cloud-shell configure \\
-         --relay-resource-group ${azurerm_resource_group.rg.name} \\
-         --relay-vnet ${azurerm_virtual_network.vnet.name} \\
-         --relay-subnet ${azurerm_subnet.deployment_subnet.name}
-    3. Deploy Function App:
-       func azure functionapp publish ${module.function_app.function_app_name}
-    4. Deploy Static Web App:
-       swa deploy --app-name ${module.static_web_app.static_web_app_name}
-  EOT
-}
-
-output "function_app_name" {
-  description = "Name of the Function App"
-  value       = module.function_app.function_app_name
-}
-
-output "static_web_app_url" {
-  description = "URL of the Static Web App"
-  value       = "https://${module.static_web_app.default_host_name}"
-}
-
-output "key_vault_name" {
-  description = "Name of the Key Vault"
-  value       = module.key_vault.key_vault_name
-}
-
-output "sql_server_name" {
-  description = "Name of the SQL Server"
-  value       = module.sql_database.sql_server_name
-}
-
-output "openai_account_name" {
-  description = "Name of the OpenAI account"
-  value       = module.openai.openai_account_name
-}
