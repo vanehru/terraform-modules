@@ -67,6 +67,24 @@ resource "azurerm_subnet" "openai_subnet" {
   address_prefixes     = ["10.0.5.0/24"]
 }
 
+# Subnet 6: Deployment Subnet (Cloud Shell Container Instance)
+resource "azurerm_subnet" "deployment_subnet" {
+  name                 = "deployment-subnet"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.6.0/24"]
+
+  delegation {
+    name = "container-delegation"
+    service_delegation {
+      name = "Microsoft.ContainerInstance/containerGroups"
+      actions = [
+        "Microsoft.Network/virtualNetworks/subnets/action",
+      ]
+    }
+  }
+}
+
 # Random password for SQL Server
 resource "random_password" "sql_admin_password" {
   length  = 16
@@ -240,5 +258,149 @@ module "static_web_app" {
   }
 }
 
+# Storage Account for Cloud Shell (user files and persistence)
+resource "azurerm_storage_account" "cloud_shell" {
+  name                     = "cloudshellstorage123"
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  
+  network_rules {
+    default_action             = "Allow"  # Cloud Shell needs internet access
+    bypass                     = ["AzureServices"]
+    virtual_network_subnet_ids = [azurerm_subnet.deployment_subnet.id]
+  }
+
+  tags = {
+    environment = "development"
+    purpose     = "cloud-shell-storage"
+  }
+}
+
+# File share for Cloud Shell persistence
+resource "azurerm_storage_share" "cloud_shell" {
+  name                 = "cloudshell"
+  storage_account_name = azurerm_storage_account.cloud_shell.name
+  quota                = 6  # 6 GB for Cloud Shell
+}
+
+# Network Profile for Cloud Shell Container Instance
+resource "azurerm_network_profile" "cloud_shell" {
+  name                = "cloudshell-network-profile"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  container_network_interface {
+    name = "cloudshell-nic"
+
+    ip_configuration {
+      name      = "cloudshell-ipconfig"
+      subnet_id = azurerm_subnet.deployment_subnet.id
+    }
+  }
+
+  tags = {
+    environment = "development"
+  }
+}
+
+# Container Instance for Cloud Shell VNet relay
+resource "azurerm_container_group" "cloud_shell_relay" {
+  name                = "cloudshell-relay"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  os_type             = "Linux"
+  
+  # Network configuration
+  network_profile_id = azurerm_network_profile.cloud_shell.id
+
+  # Identity for Azure authentication
+  identity {
+    type = "SystemAssigned"
+  }
+
+  container {
+    name   = "cloud-shell-relay"
+    image  = "mcr.microsoft.com/azure-cli:latest"
+    cpu    = "0.5"
+    memory = "1.5"
+
+    # Keep container running
+    commands = [
+      "/bin/sh",
+      "-c",
+      "while true; do sleep 3600; done"
+    ]
+
+    # Environment variables for Azure tools
+    environment_variables = {
+      "AZURE_SUBSCRIPTION_ID" = data.azurerm_client_config.current.subscription_id
+    }
+  }
+
+  tags = {
+    environment = "development"
+    purpose     = "cloud-shell-vnet-relay"
+  }
+}
+
 # Get Azure AD info for access policies
 data "azurerm_client_config" "current" {}
+
+# Outputs
+output "cloud_shell_storage_account" {
+  description = "Storage account name for Cloud Shell"
+  value       = azurerm_storage_account.cloud_shell.name
+}
+
+output "cloud_shell_file_share" {
+  description = "File share name for Cloud Shell persistence"
+  value       = azurerm_storage_share.cloud_shell.name
+}
+
+output "cloud_shell_container_ip" {
+  description = "Private IP of Cloud Shell relay container"
+  value       = azurerm_container_group.cloud_shell_relay.ip_address
+}
+
+output "deployment_instructions" {
+  description = "How to use Cloud Shell for deployment"
+  value       = <<-EOT
+    1. Open Azure Cloud Shell: https://shell.azure.com
+    2. Configure Cloud Shell to use this VNet:
+       az cloud-shell configure \\
+         --relay-resource-group ${azurerm_resource_group.rg.name} \\
+         --relay-vnet ${azurerm_virtual_network.vnet.name} \\
+         --relay-subnet ${azurerm_subnet.deployment_subnet.name}
+    3. Deploy Function App:
+       func azure functionapp publish ${module.function_app.function_app_name}
+    4. Deploy Static Web App:
+       swa deploy --app-name ${module.static_web_app.static_web_app_name}
+  EOT
+}
+
+output "function_app_name" {
+  description = "Name of the Function App"
+  value       = module.function_app.function_app_name
+}
+
+output "static_web_app_url" {
+  description = "URL of the Static Web App"
+  value       = "https://${module.static_web_app.default_host_name}"
+}
+
+output "key_vault_name" {
+  description = "Name of the Key Vault"
+  value       = module.key_vault.key_vault_name
+}
+
+output "sql_server_name" {
+  description = "Name of the SQL Server"
+  value       = module.sql_database.sql_server_name
+}
+
+output "openai_account_name" {
+  description = "Name of the OpenAI account"
+  value       = module.openai.openai_account_name
+}

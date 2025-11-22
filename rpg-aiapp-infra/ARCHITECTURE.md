@@ -57,10 +57,16 @@ Azure Virtual Network: 10.0.0.0/16 (65,536 IP addresses)
 │  ├─ Private DNS: privatelink.database.windows.net
 │  └─ Purpose: Data persistence tier
 │
-└─ OpenAI Subnet: 10.0.5.0/24 (251 usable IPs)
-   ├─ Component: Azure OpenAI Private Endpoint (10.0.5.x)
-   ├─ Private DNS: privatelink.openai.azure.com
-   └─ Purpose: AI/ML services tier
+├─ OpenAI Subnet: 10.0.5.0/24 (251 usable IPs)
+│  ├─ Component: Azure OpenAI Private Endpoint (10.0.5.x)
+│  ├─ Private DNS: privatelink.openai.azure.com
+│  └─ Purpose: AI/ML services tier
+│
+└─ Deployment Subnet: 10.0.6.0/24 (251 usable IPs)
+   ├─ Component: Azure Cloud Shell Container Instance (10.0.6.x)
+   ├─ Network Profile: cloudshell-network-profile
+   ├─ Purpose: Secure deployment access to private endpoints
+   └─ Cost: ~$5/month (vs ~$200/month for Bastion+VM)
 ```
 
 ### Subnet Design Rationale
@@ -91,6 +97,13 @@ Azure Virtual Network: 10.0.0.0/16 (65,536 IP addresses)
    - Clear separation of concerns
    - Easier troubleshooting (network issues isolated per tier)
    - Better monitoring and alerting
+
+**Deployment Subnet Benefits:**
+- **Cost Optimization**: Azure Cloud Shell is FREE, only Container Instance costs ~$5/month
+- **Security**: No public jump box, access only through secure VNet relay
+- **Convenience**: Pre-installed tools (Azure CLI, Functions Core Tools, git, npm, pip)
+- **No Maintenance**: Microsoft manages updates, security patches
+- **Persistent Storage**: 6 GB Cloud Shell storage for scripts and code
 
 ### Private DNS Architecture
 
@@ -617,8 +630,9 @@ Admin Dashboard → Function App (Admin Auth)
    - Microsoft.CognitiveServices
    - Microsoft.Storage
    - Microsoft.Network
+   - Microsoft.ContainerInstance
 
-### Step-by-Step Deployment
+### Step 1: Deploy Infrastructure
 
 ```bash
 # 1. Login to Azure
@@ -637,39 +651,334 @@ terraform validate
 # 5. Plan deployment
 terraform plan -out=deployment.tfplan
 
-# 6. Review plan carefully
+# 6. Review plan carefully (look for 6 subnets, 5 private endpoints)
 terraform show deployment.tfplan
 
 # 7. Apply configuration
 terraform apply deployment.tfplan
 
-# 8. Note outputs
-terraform output
+# 8. Save outputs for later use
+terraform output > deployment-info.txt
+cat deployment-info.txt
 ```
 
-### Post-Deployment Steps
+### Step 2: Configure Azure Cloud Shell for VNet Access
+
+#### Why Cloud Shell?
+
+Azure Cloud Shell provides secure deployment access without expensive jump boxes:
+
+| Feature | Cloud Shell + Container | Bastion + VM |
+|---------|------------------------|--------------|
+| Monthly Cost | **~$5** | ~$200 |
+| Setup Time | 5 minutes | 20 minutes |
+| Maintenance | None (Microsoft-managed) | OS patching, updates |
+| Pre-installed Tools | Azure CLI, func, git, npm, pip | Manual installation |
+| Security | VNet relay, no public IP | Public Bastion endpoint |
+
+#### Configure Cloud Shell VNet Integration
 
 ```bash
-# 1. Verify private endpoints
-az network private-endpoint list --resource-group example-rg --output table
+# 1. Open Azure Cloud Shell (https://shell.azure.com)
+# 2. Select Bash environment
 
-# 2. Test DNS resolution from Function App
-az functionapp config appsettings set \
-  --name example-func \
-  --resource-group example-rg \
-  --settings "TEST=nslookup examplekv123.vault.azure.net"
+# 3. Set variables from Terraform outputs
+RG_NAME="example-rg"              # Your resource group name
+VNET_NAME="example-vnet"          # Your VNet name
+SUBNET_NAME="deployment-subnet"    # Deployment subnet (10.0.6.0/24)
 
-# 3. Check Key Vault access
+# 4. Configure Cloud Shell to use Container Instance in VNet
+az cloud-shell configure \
+  --relay-resource-group $RG_NAME \
+  --relay-vnet $VNET_NAME \
+  --relay-subnet $SUBNET_NAME
+
+# Cloud Shell will restart and connect to VNet
+# This creates a Container Instance in your deployment subnet
+# Takes ~2-3 minutes
+```
+
+#### Verify VNet Connectivity
+
+```bash
+# Test DNS resolution for private endpoints
+nslookup examplekv123.vault.azure.net
+# Should return private IP: 10.0.3.x
+
+nslookup rpg-gaming-sql-server.database.windows.net
+# Should return private IP: 10.0.4.x
+
+nslookup rpg-gaming-openai.openai.azure.com
+# Should return private IP: 10.0.5.x
+
+# Test Key Vault access
 az keyvault secret list --vault-name examplekv123
 
-# 4. Verify Function App can access Key Vault
-# Deploy test function and check logs
+# Test Storage Account access
+az storage account show --name <storage-account-name> --resource-group $RG_NAME
+```
 
-# 5. Test SQL connectivity
-# Use Azure Data Studio with private endpoint connection
+### Step 3: Deploy Application Code
 
-# 6. Deploy application code
-func azure functionapp publish example-func
+#### Clone Your Repository
+
+```bash
+# Navigate to Cloud Shell home
+cd ~
+
+# Clone your application code
+git clone https://github.com/your-org/rpg-gaming-app.git
+cd rpg-gaming-app
+```
+
+#### Install Required Tools (if needed)
+
+```bash
+# Node.js (for Static Web App)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Azure Functions Core Tools
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+# Static Web Apps CLI
+npm install -g @azure/static-web-apps-cli
+
+# SQL Server command-line tools
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+sudo apt-get update
+sudo apt-get install -y mssql-tools unixodbc-dev
+
+# Verify installations
+func --version
+swa --version
+node --version
+/opt/mssql-tools/bin/sqlcmd -?
+```
+
+#### Deploy Function App
+
+```bash
+cd ~/rpg-gaming-app/function-app
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Deploy to Azure Function App
+func azure functionapp publish example-func --python
+
+# Verify deployment
+curl https://example-func.azurewebsites.net/api/health
+
+# Stream logs
+func azure functionapp logstream example-func
+```
+
+#### Deploy Static Web App
+
+```bash
+cd ~/rpg-gaming-app/frontend
+
+# Install dependencies
+npm install
+
+# Build production bundle
+npm run build
+
+# Deploy using Static Web Apps CLI
+swa deploy --app-name rpg-gaming-web --env production
+
+# Or deploy using Azure CLI
+az staticwebapp deploy \
+  --name rpg-gaming-web \
+  --app-location . \
+  --output-location dist
+```
+
+### Step 4: Post-Deployment Verification
+
+```bash
+# 1. Test private endpoints connectivity
+az network private-endpoint list \
+  --resource-group example-rg \
+  --query '[].{Name:name, ProvisioningState:provisioningState, Subnet:subnet.id}' \
+  --output table
+
+# 2. Verify Key Vault secrets are accessible
+az keyvault secret show \
+  --vault-name examplekv123 \
+  --name sql-admin-password
+
+# 3. Test SQL Database connectivity
+/opt/mssql-tools/bin/sqlcmd \
+  -S rpg-gaming-sql-server.database.windows.net \
+  -d rpg-gaming-db \
+  -U sqladmin \
+  -P '<password-from-keyvault>' \
+  -Q "SELECT @@VERSION"
+
+# 4. Verify OpenAI deployments
+az cognitiveservices account deployment list \
+  --name rpg-gaming-openai \
+  --resource-group example-rg \
+  --output table
+
+# 5. Test Function App endpoints
+FUNC_URL=$(az functionapp show \
+  --name example-func \
+  --resource-group example-rg \
+  --query defaultHostName -o tsv)
+
+curl https://$FUNC_URL/api/health
+curl -X POST https://$FUNC_URL/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","email":"test@example.com"}'
+
+# 6. Get Static Web App URL
+SWA_URL=$(az staticwebapp show \
+  --name rpg-gaming-web \
+  --resource-group example-rg \
+  --query defaultHostname -o tsv)
+
+echo "Static Web App: https://$SWA_URL"
+```
+
+### Deployment Best Practices
+
+#### Create Deployment Script
+
+Save time with a reusable deployment script:
+
+```bash
+cat > ~/deploy-rpg-app.sh <<'EOF'
+#!/bin/bash
+set -e
+
+echo "🚀 RPG Gaming App Deployment"
+echo "=============================="
+
+# Variables
+RG_NAME="example-rg"
+FUNC_NAME="example-func"
+SWA_NAME="rpg-gaming-web"
+
+# Function App
+echo "📦 Deploying Function App..."
+cd ~/rpg-gaming-app/function-app
+func azure functionapp publish $FUNC_NAME --python
+
+# Static Web App
+echo "🌐 Deploying Static Web App..."
+cd ~/rpg-gaming-app/frontend
+npm run build
+swa deploy --app-name $SWA_NAME --env production
+
+# Verification
+echo "✅ Deployment Complete!"
+echo ""
+echo "URLs:"
+FUNC_URL=$(az functionapp show --name $FUNC_NAME --resource-group $RG_NAME --query defaultHostName -o tsv)
+SWA_URL=$(az staticwebapp show --name $SWA_NAME --resource-group $RG_NAME --query defaultHostname -o tsv)
+echo "  Function App: https://$FUNC_URL"
+echo "  Static Web App: https://$SWA_URL"
+EOF
+
+chmod +x ~/deploy-rpg-app.sh
+
+# Run deployment
+~/deploy-rpg-app.sh
+```
+
+#### Use tmux for Persistent Sessions
+
+Cloud Shell has 20-minute idle timeout. Use tmux to maintain sessions:
+
+```bash
+# Install tmux
+sudo apt-get update && sudo apt-get install -y tmux
+
+# Create named session
+tmux new -s deployment
+
+# Work in session...
+
+# Detach with: Ctrl+b, then d
+# Reattach later with:
+tmux attach -t deployment
+
+# List sessions:
+tmux ls
+```
+
+### Troubleshooting Deployment
+
+#### Cloud Shell Can't Access Private Endpoints
+
+```bash
+# Check container status
+az container show \
+  --name cloudshell-relay \
+  --resource-group example-rg \
+  --query provisioningState
+
+# Restart container if needed
+az container restart \
+  --name cloudshell-relay \
+  --resource-group example-rg
+
+# Verify network profile
+az network profile show \
+  --name cloudshell-network-profile \
+  --resource-group example-rg
+
+# Re-configure Cloud Shell
+az cloud-shell configure \
+  --relay-resource-group example-rg \
+  --relay-vnet example-vnet \
+  --relay-subnet deployment-subnet
+```
+
+#### DNS Resolution Failing
+
+```bash
+# Check private DNS zones
+az network private-dns zone list \
+  --resource-group example-rg \
+  --output table
+
+# Verify VNet links
+az network private-dns link vnet list \
+  --resource-group example-rg \
+  --zone-name privatelink.vaultcore.azure.net
+
+# Test with dig
+dig examplekv123.vault.azure.net
+
+# Should show A record pointing to 10.0.3.x
+```
+
+#### Function App Deployment Fails
+
+```bash
+# Check Function App status
+az functionapp show \
+  --name example-func \
+  --resource-group example-rg \
+  --query state
+
+# Restart Function App
+az functionapp restart \
+  --name example-func \
+  --resource-group example-rg
+
+# Check deployment logs
+func azure functionapp logstream example-func
+
+# Verify VNet integration
+az functionapp vnet-integration list \
+  --name example-func \
+  --resource-group example-rg
 ```
 
 ---

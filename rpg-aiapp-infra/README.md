@@ -103,7 +103,8 @@ All private endpoints use Private DNS Zones for name resolution within the VNet:
 4. **Key Vault** - Securely stores database credentials and API keys (Private Endpoint)
 5. **Azure OpenAI** - AI-powered game features and interactions (Private Endpoint)
 6. **Storage Account** - Function App backend storage (Private Endpoint)
-7. **Virtual Network** - Complete network isolation with private endpoints
+7. **Virtual Network** - Complete network isolation with 6 dedicated subnets
+8. **Cloud Shell Container** - Secure deployment access via VNet relay (~$5/month)
 
 ### Network Security Features
 
@@ -111,26 +112,43 @@ All private endpoints use Private DNS Zones for name resolution within the VNet:
    - All backend services (SQL, Key Vault, OpenAI, Storage) use private endpoints
    - No public internet access to backend resources
    - All traffic flows through the private VNet
+   - 6 dedicated subnets for microsegmentation
 
-#### 2. **VNet Integration**
+#### 2. **Subnet Isolation Strategy**
+   ```
+   10.0.1.0/24 - App Subnet        → Function App (VNet Integration)
+   10.0.2.0/24 - Storage Subnet    → Storage Account Private Endpoint
+   10.0.3.0/24 - Key Vault Subnet  → Key Vault Private Endpoint
+   10.0.4.0/24 - Database Subnet   → SQL Database Private Endpoint
+   10.0.5.0/24 - OpenAI Subnet     → Azure OpenAI Private Endpoint
+   10.0.6.0/24 - Deployment Subnet → Cloud Shell Container Instance
+   ```
+
+#### 3. **VNet Integration**
    - Function App is integrated with VNet (`vnet_route_all_enabled = true`)
    - All outbound traffic from Function App routed through VNet
    - Access to private endpoint services without public IPs
 
-#### 3. **Network Access Control Lists (ACLs)**
+#### 4. **Network Access Control Lists (ACLs)**
    - **Key Vault**: Default action = Deny, only specific subnets allowed
    - **Storage Account**: Default action = Deny, only specific subnets allowed
    - **SQL Database**: Public network access disabled
    - **OpenAI**: Public network access disabled
 
-#### 4. **Service Endpoints**
+#### 5. **Service Endpoints**
    - **Microsoft.Web** on Function App subnet (10.0.1.0/24)
-   - **Microsoft.Sql** on SQL subnet (10.0.3.0/24)
+   - **Microsoft.Sql** on Database subnet (10.0.4.0/24)
 
-#### 5. **Managed Identity & Zero Secrets**
+#### 6. **Managed Identity & Zero Secrets**
    - Function App uses Managed Identity to access Key Vault
    - No passwords or keys stored in application code
    - All secrets retrieved from Key Vault at runtime
+
+#### 7. **Secure Deployment Access**
+   - Azure Cloud Shell with Container Instance in VNet
+   - No public jump boxes or Bastion hosts required
+   - Deployment access only through secure VNet relay
+   - Cost-effective: ~$5/month vs ~$200/month for Bastion+VM
 
 ## Data Flow
 
@@ -331,6 +349,13 @@ Virtual Network: 10.0.0.0/16 (65,536 IPs)
    ├─ Private DNS: privatelink.openai.azure.com
    ├─ Public Access: Disabled
    └─ Access: Only from App subnet
+
+├─ 6. Deployment Subnet (10.0.6.0/24) - 251 IPs
+   ├─ Purpose: DevOps / CI/CD tier
+   ├─ Components: Deployment VM (Jump Box / Build Agent)
+   ├─ Access: Azure Bastion for secure management
+   ├─ Outbound: Can access all subnets (for deployment)
+   └─ Tools: Azure CLI, Docker, Git, Node.js, Python, .NET, Function Core Tools
 ```
 
 ### Subnet Design Benefits
@@ -341,6 +366,7 @@ Virtual Network: 10.0.0.0/16 (65,536 IPs)
 4. **Compliance**: Meets security frameworks requiring network segmentation
 5. **Scalability**: Each subnet can grow independently (251 IPs each)
 6. **Troubleshooting**: Easier to diagnose network issues per component
+7. **Deployment Security**: Dedicated subnet for deployment VM with controlled access
 
 ### Traffic Flow Matrix
 
@@ -398,26 +424,365 @@ Service endpoints provide optimized routing from subnets to Azure services:
 
 ## Deployment
 
+### 🌟 Deployment Strategy: Azure Cloud Shell with VNet Integration
+
+Since all services use **private endpoints** with **no public access**, you need to deploy from within the VNet. Azure Cloud Shell with Container Instance provides the **most cost-effective** solution.
+
+#### Why Cloud Shell + Container Instance?
+
+| Feature | Benefit |
+|---------|---------|
+| 💰 **Cost** | **~$5/month** (Container Instance only) |
+| 🆓 **Cloud Shell** | **FREE** - Microsoft-managed service |
+| 🔒 **Security** | Runs inside VNet, accesses all private endpoints |
+| ⚡ **Ready-to-Use** | Pre-installed: Azure CLI, Functions Core Tools, kubectl, terraform, git |
+| 📦 **Persistent** | 6 GB storage for your files and scripts |
+| 🚀 **Fast** | No VM provisioning, instant access |
+| 🛡️ **Managed** | No OS patching, security updates handled by Microsoft |
+
+#### Cost Comparison
+
+```
+┌─────────────────────────┬──────────────┬────────────┐
+│ Method                  │ Monthly Cost │ Setup Time │
+├─────────────────────────┼──────────────┼────────────┤
+│ ✅ Cloud Shell +        │   ~$5        │  5 mins    │
+│    Container Instance   │              │            │
+├─────────────────────────┼──────────────┼────────────┤
+│ ❌ Azure Bastion + VM   │   ~$200      │  20 mins   │
+│                         │  ($140+$60)  │            │
+└─────────────────────────┴──────────────┴────────────┘
+
+💰 Savings: $195/month (97.5% cost reduction!)
+```
+
 ### Prerequisites
-- Azure CLI installed and authenticated
-- Terraform >= 1.0
-- Appropriate Azure permissions
 
-### Steps
+1. **Azure CLI** (2.50+)
+2. **Terraform** (1.5+)
+3. **Azure Subscription** with appropriate permissions
+4. **Resource Provider** registrations:
+   - Microsoft.Web
+   - Microsoft.Sql
+   - Microsoft.KeyVault
+   - Microsoft.CognitiveServices
+   - Microsoft.Storage
+   - Microsoft.Network
+   - Microsoft.ContainerInstance
 
-1. Initialize Terraform:
+### Step 1: Deploy Infrastructure
+
 ```bash
+# 1. Login to Azure
+az login
+az account set --subscription "Your-Subscription-Name"
+
+# 2. Navigate to project directory
+cd rpg-aiapp-infra
+
+# 3. Initialize Terraform
 terraform init
+
+# 4. Validate configuration
+terraform validate
+
+# 5. Plan deployment
+terraform plan -out=deployment.tfplan
+
+# 6. Review plan carefully
+terraform show deployment.tfplan
+
+# 7. Apply configuration
+terraform apply deployment.tfplan
+
+# 8. Save outputs
+terraform output > deployment-info.txt
+cat deployment-info.txt
 ```
 
-2. Review the plan:
+### Step 2: Configure Azure Cloud Shell
+
+#### Open Cloud Shell
+
+1. Go to [https://shell.azure.com](https://shell.azure.com)
+2. Select **Bash** environment
+3. If first time, choose your subscription and create storage
+
+#### Configure VNet Integration
+
 ```bash
-terraform plan
+# Set variables from Terraform outputs
+RG_NAME="example-rg"
+VNET_NAME="example-vnet"
+SUBNET_NAME="deployment-subnet"
+
+# Configure Cloud Shell to use Container Instance in VNet
+az cloud-shell configure \
+  --relay-resource-group $RG_NAME \
+  --relay-vnet $VNET_NAME \
+  --relay-subnet $SUBNET_NAME
+
+# Cloud Shell will restart and connect to VNet
+# This may take 2-3 minutes
 ```
 
-3. Apply the configuration:
+#### Verify Connectivity
+
 ```bash
-terraform apply
+# Test private endpoint connectivity
+nslookup examplekv123.vault.azure.net
+nslookup rpg-gaming-sql-server.database.windows.net
+nslookup rpg-gaming-openai.openai.azure.com
+
+# Test Key Vault access
+az keyvault secret list --vault-name examplekv123
+
+# Test SQL connection (if sqlcmd installed)
+# Install sqlcmd if needed:
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+sudo apt-get update
+sudo apt-get install -y mssql-tools unixodbc-dev
+
+# Test connection
+/opt/mssql-tools/bin/sqlcmd -S rpg-gaming-sql-server.database.windows.net -d rpg-gaming-db -U sqladmin -P '<password>'
+```
+
+### Step 3: Deploy Application Code
+
+#### Install Required Tools (if not already installed)
+
+```bash
+# Install Node.js (for Static Web App)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install Azure Functions Core Tools
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+# Install Static Web Apps CLI
+npm install -g @azure/static-web-apps-cli
+
+# Verify installations
+func --version
+swa --version
+az --version
+```
+
+#### Deploy Function App
+
+```bash
+# Clone your repository
+cd ~
+git clone https://github.com/your-org/your-rpg-app.git
+cd your-rpg-app/function-app
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Deploy to Function App
+func azure functionapp publish example-func --python
+
+# View logs
+func azure functionapp logstream example-func
+```
+
+#### Deploy Static Web App
+
+```bash
+# Navigate to frontend code
+cd ~/your-rpg-app/frontend
+
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Deploy using SWA CLI
+swa deploy --app-name rpg-gaming-web --env production
+
+# Or deploy using Azure CLI
+az staticwebapp deploy \
+  --name rpg-gaming-web \
+  --app-location . \
+  --output-location dist
+```
+
+### Step 4: Test Deployment
+
+```bash
+# Get Function App URL
+FUNC_URL=$(az functionapp show \
+  --name example-func \
+  --resource-group example-rg \
+  --query defaultHostName -o tsv)
+
+echo "Function App URL: https://$FUNC_URL"
+
+# Get Static Web App URL
+SWA_URL=$(az staticwebapp show \
+  --name rpg-gaming-web \
+  --resource-group example-rg \
+  --query defaultHostname -o tsv)
+
+echo "Static Web App URL: https://$SWA_URL"
+
+# Test Function App health endpoint
+curl https://$FUNC_URL/api/health
+
+# Test user registration endpoint
+curl -X POST https://$FUNC_URL/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","email":"test@example.com"}'
+```
+
+### Cloud Shell Tips & Tricks
+
+#### Create Deployment Script
+
+```bash
+# Create a reusable deployment script
+cat > ~/deploy-all.sh <<'EOF'
+#!/bin/bash
+set -e
+
+echo "🚀 Deploying RPG Gaming App..."
+
+# Function App
+echo "📦 Deploying Function App..."
+cd ~/your-rpg-app/function-app
+func azure functionapp publish example-func --python
+
+# Static Web App
+echo "🌐 Deploying Static Web App..."
+cd ~/your-rpg-app/frontend
+npm run build
+swa deploy --app-name rpg-gaming-web --env production
+
+echo "✅ Deployment complete!"
+echo "🌐 Static Web App: https://rpg-gaming-web.azurestaticapps.net"
+echo "⚡ Function App: https://example-func.azurewebsites.net"
+EOF
+
+chmod +x ~/deploy-all.sh
+
+# Run deployment
+~/deploy-all.sh
+```
+
+#### Monitor Services
+
+```bash
+# Function App logs
+func azure functionapp logstream example-func
+
+# SQL Database queries (from Cloud Shell)
+sqlcmd -S rpg-gaming-sql-server.database.windows.net \
+  -d rpg-gaming-db \
+  -U sqladmin \
+  -P '<password>' \
+  -Q "SELECT TOP 10 * FROM Users ORDER BY CreatedAt DESC"
+
+# Key Vault secrets
+az keyvault secret list --vault-name examplekv123 --query '[].name' -o table
+
+# OpenAI deployment status
+az cognitiveservices account deployment list \
+  --name rpg-gaming-openai \
+  --resource-group example-rg \
+  -o table
+```
+
+### Architecture with Cloud Shell
+
+```
+                    Internet
+                       ↓
+            ┌──────────────────────┐
+            │  Azure Cloud Shell   │ (Browser, FREE)
+            │ (shell.azure.com)    │
+            └──────────────────────┘
+                       ↓
+              ╔════════════════════════╗
+              ║  Container Instance    ║ ($5/month)
+              ║  in Deployment Subnet  ║
+              ║    (10.0.6.0/24)      ║
+              ║                        ║
+              ║  Tools: Azure CLI,     ║
+              ║  func, git, npm, pip   ║
+              ╚════════════════════════╝
+                       ↓ (Private VNet)
+        ┌──────────────┼──────────────┐
+        ↓              ↓               ↓
+   Function App   Key Vault      SQL Database
+   (10.0.1.x)     (10.0.3.x)     (10.0.4.x)
+        ↓              ↓               ↓
+   Storage        OpenAI          All Private
+   (10.0.2.x)    (10.0.5.x)      Endpoints
+```
+
+### Why This Works
+
+1. **Cloud Shell** runs in Microsoft's infrastructure (FREE)
+2. **Container Instance** deployed in your VNet ($5/month)
+3. Cloud Shell **connects to Container** via secure tunnel
+4. Container has **network access** to all private endpoints
+5. You deploy code **through Cloud Shell** → **through Container** → **to services**
+
+### Troubleshooting Cloud Shell
+
+#### Cloud Shell Won't Connect to VNet
+
+```bash
+# Check container status
+az container show \
+  --name cloudshell-relay \
+  --resource-group example-rg \
+  --query provisioningState
+
+# Restart container if needed
+az container restart \
+  --name cloudshell-relay \
+  --resource-group example-rg
+
+# Verify network profile
+az network profile show \
+  --name cloudshell-network-profile \
+  --resource-group example-rg
+```
+
+#### Cannot Access Private Endpoints
+
+```bash
+# Check DNS resolution
+nslookup examplekv123.vault.azure.net
+
+# Should return private IP (10.0.3.x range)
+# If returns public IP, DNS zone not working
+
+# Check private DNS zone link
+az network private-dns link vnet list \
+  --resource-group example-rg \
+  --zone-name privatelink.vaultcore.azure.net
+
+# Test direct IP connectivity
+nc -zv 10.0.3.4 443  # Replace with actual private IP
+```
+
+#### Session Keeps Timing Out
+
+```bash
+# Cloud Shell has 20-minute idle timeout
+# Keep session alive with a simple loop:
+while true; do echo "keepalive $(date)"; sleep 600; done &
+
+# Or install tmux for persistent sessions:
+sudo apt-get update && sudo apt-get install -y tmux
+tmux new -s deployment
+# Work in tmux session
+# Detach with Ctrl+b, d
+# Reattach with: tmux attach -t deployment
 ```
 
 ## Usage
