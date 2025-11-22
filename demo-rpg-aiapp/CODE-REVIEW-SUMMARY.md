@@ -94,6 +94,7 @@ MAX_PARAMETER_VALUE = 100
 - ✅ `keyvault_helper.py` - Removed unnecessary async
 - ✅ `password_helper.py` - Already well-written (no changes needed)
 - ✅ `requirements.txt` - Verified dependencies
+- ✅ `.gitignore` - Added environment files and local settings
 
 ---
 
@@ -183,7 +184,9 @@ export default {
 1. ✅ `src/services/api.js` - Centralized API service
 2. ✅ `.env.example` - Environment variable template
 3. ✅ `.env.development` - Development config
-4. ✅ `FIXES.md` - Frontend-specific documentation
+4. ✅ `.env.production.template` - Production template (committed)
+5. ✅ `FIXES.md` - Frontend-specific documentation
+6. ✅ `.gitignore` - Added .env.production to ignore list
 
 ### Files Modified
 1. ✅ `src/views/IndexView.vue`
@@ -210,6 +213,96 @@ Both backend and frontend now use consistent field names:
 | UPDATE | UserId, CharId, Exp, etc. | Success message (text) |
 | SELECTEVENTS | eventId (query) | `{"List": [event objects]}` |
 | OpenAI | message | OpenAI response object |
+
+---
+
+## Configuration Management
+
+### ✅ Centralized Configuration System
+
+**Problem:** Hardcoded URLs and secrets in code, difficult to update after infrastructure deployment
+
+**Solution:**
+- Created environment variable templates for both backend and frontend
+- Built automated configuration scripts that pull from Terraform outputs
+- Proper separation of example/template files (committed) vs actual config files (gitignored)
+
+### Backend Configuration Files
+
+| File | Purpose | Git Status |
+|------|---------|-----------|
+| `.env.example` | Template for environment variables | ✅ Committed |
+| `local.settings.json.example` | Template for Azure Functions | ✅ Committed (auto-updated) |
+| `.env` | Actual environment variables | ❌ Gitignored |
+| `local.settings.json` | Actual local settings | ❌ Gitignored |
+
+**Environment Variables:**
+- `KEYVAULT_URL` - Azure Key Vault URL
+- `AZURE_OPENAI_ENDPOINT` - OpenAI resource endpoint
+- `AZURE_OPENAI_KEY` - OpenAI API key (Key Vault reference in production)
+- `AZURE_OPENAI_DEPLOYMENT` - Deployment name (e.g., gpt-4o)
+
+### Frontend Configuration Files
+
+| File | Purpose | Git Status |
+|------|---------|-----------|
+| `.env.example` | Template with default values | ✅ Committed |
+| `.env.development` | Development environment | ✅ Committed |
+| `.env.production.template` | Production template | ✅ Committed |
+| `.env.production` | Actual production config | ❌ Gitignored |
+| `.env.local` | Local overrides | ❌ Gitignored |
+
+**Environment Variables:**
+- `VUE_APP_API_BASE_URL` - Backend API base URL
+- `VUE_APP_ENVIRONMENT` - Environment name
+
+### Automation Scripts
+
+Created three bash scripts in `scripts/` directory:
+
+1. **`configure-all.sh`** (Recommended)
+   - Full automation of both backend and frontend configuration
+   - Pulls all Terraform outputs
+   - Updates Function App settings in Azure
+   - Updates frontend environment files
+   - Optionally builds frontend
+
+2. **`configure-backend.sh`**
+   - Backend-only configuration
+   - Sets Azure Function App application settings
+   - Uses Key Vault references for secrets
+
+3. **`configure-frontend.sh`**
+   - Frontend-only configuration
+   - Updates `.env.production` with actual API URL
+   - Optionally builds frontend
+
+### Usage After Terraform Deployment
+
+```bash
+# Deploy infrastructure
+cd rpg-aiapp-infra
+terraform apply
+
+# Configure applications automatically
+cd ..
+./scripts/configure-all.sh
+
+# For local development
+cd rpg-aiapp-dev/rpg-backend-python
+cp local.settings.json.example local.settings.json
+
+cd ../rpg-frontend-main
+cp .env.example .env.local
+```
+
+### Security Best Practices
+
+✅ **Key Vault References** - Secrets stored in Key Vault, not in environment variables  
+✅ **Managed Identity** - Function App uses Managed Identity to access Key Vault  
+✅ **Gitignore Protection** - All actual config files are gitignored  
+✅ **Template Files** - Examples committed as documentation  
+✅ **No Hardcoded Secrets** - All secrets via Key Vault or environment variables  
 
 ---
 
@@ -339,15 +432,36 @@ Both backend and frontend now use consistent field names:
 
 ## Summary
 
-**Total Issues Found:** 25  
-**Critical Issues:** 8  
+**Total Issues Found:** 26  
+**Critical Issues:** 9  
 **Important Issues:** 7  
 **Code Quality Issues:** 10  
 
 **Status:** ✅ All issues resolved  
 **Code Quality:** Significantly improved  
-**Security:** Enhanced  
+**Security:** Enhanced with Key Vault integration  
 **Maintainability:** Much better  
 **Performance:** Optimized  
+**Configuration:** Fully automated with scripts  
 
-The codebase is now production-ready with proper error handling, security measures, and maintainable architecture.
+The codebase is now production-ready with:
+- ✅ Proper error handling and resource management
+- ✅ Security measures with PBKDF2 and Key Vault
+- ✅ Maintainable architecture with clear separation of concerns
+- ✅ Automated configuration management
+- ✅ No hardcoded URLs or secrets
+- ✅ Easy deployment process with Terraform + automation scripts
+
+## Quick Start After Infrastructure Deployment
+
+```bash
+# 1. Deploy infrastructure
+cd rpg-aiapp-infra
+terraform apply
+
+# 2. Auto-configure applications
+cd ..
+./scripts/configure-all.sh
+
+# 3. Done! Application is configured and ready to use
+```
