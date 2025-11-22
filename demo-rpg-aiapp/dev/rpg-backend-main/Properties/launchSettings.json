@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "AIapp_0815": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7194",
+      "launchBrowser": false
+    }
+  }
+}

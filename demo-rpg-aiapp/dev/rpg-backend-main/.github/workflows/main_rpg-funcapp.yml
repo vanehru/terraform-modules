@@ -1,0 +1,65 @@
+name: Deploy Azure Function
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_FUNCTIONAPP_NAME: 'rpg-funcapp'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@v4
+
+    - name: Setup .NET ${{ env.DOTNET_VERSION }} Environment
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: 'Azure Login'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: 'Restore dependencies'
+      run: dotnet restore AzureOpenAISample.csproj
+      
+    - name: 'Build project'
+      run: dotnet build AzureOpenAISample.csproj --configuration Release --no-restore
+
+    - name: 'Publish project'
+      run: dotnet publish AzureOpenAISample.csproj --configuration Release --no-build --output ./output
+
+    - name: 'Deploy to Azure Functions'
+      uses: Azure/functions-action@v1
+      with:
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+        package: ./output
+    
+    # - name: 'Set Azure Function App Settings'
+    #   uses: azure/appservice-settings@v1
+    #   with:
+    #     app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+    #     app-settings-json: |
+    #       [
+    #         {
+    #           "name": "AZURE_OPENAI_ENDPOINT",
+    #           "value": "${{ secrets.AZURE_OPENAI_ENDPOINT }}",
+    #           "slotSetting": false
+    #         },
+    #         {
+    #           "name": "AZURE_OPENAI_KEY",
+    #           "value": "${{ secrets.AZURE_OPENAI_KEY }}",
+    #           "slotSetting": false
+    #         }
+    #       ]
+    #     connection-string-json: '{}'
+    #   if: success()

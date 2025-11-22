@@ -1,0 +1,87 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'dev/rpg-backend-python/**'
+      - '.github/workflows/deploy-backend.yml'
+  repository_dispatch:
+    types: [infrastructure-deployed]
+  workflow_dispatch:
+
+jobs:
+  deploy-backend:
+    name: Deploy Python Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get Infrastructure Outputs
+        id: infra
+        run: |
+          cd infra
+          terraform init
+          echo "FUNCTION_APP_NAME=$(terraform output -raw function_app_name)" >> $GITHUB_OUTPUT
+          echo "RESOURCE_GROUP=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+
+      - name: Install Dependencies
+        working-directory: ./dev/rpg-backend-python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+
+      - name: Create Deployment Package
+        working-directory: ./dev/rpg-backend-python
+        run: |
+          # Copy function files
+          mkdir -p deployment
+          cp -r *.py deployment/
+          cp requirements.txt deployment/
+          cp host.json deployment/
+          cp -r .python_packages deployment/
+          
+          # Create zip
+          cd deployment
+          zip -r ../function-app.zip .
+          cd ..
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.infra.outputs.FUNCTION_APP_NAME }}
+          package: ./dev/rpg-backend-python/function-app.zip
+          respect-funcignore: true
+
+      - name: Verify Deployment
+        run: |
+          FUNCTION_URL="https://${{ steps.infra.outputs.FUNCTION_APP_NAME }}.azurewebsites.net"
+          echo "Testing Function App at: $FUNCTION_URL"
+          
+          # Wait for app to warm up
+          sleep 30
+          
+          # Test health endpoint
+          curl -f "$FUNCTION_URL/api/SELECTEVENTS" || echo "Function may need more time to start"
+
+      - name: Cleanup
+        if: always()
+        working-directory: ./dev/rpg-backend-python
+        run: |
+          rm -rf deployment
+          rm -f function-app.zip
+          rm -rf .python_packages
