@@ -31,25 +31,66 @@ This document provides comprehensive details about the RPG Gaming App infrastruc
 ### Virtual Network Design
 
 ```
-Azure Virtual Network: 10.0.0.0/16
+Azure Virtual Network: 10.0.0.0/16 (65,536 IP addresses)
 │
-├─ Function App Subnet: 10.0.1.0/24
+├─ App Subnet: 10.0.1.0/24 (251 usable IPs)
+│  ├─ Component: Static Web App (delegated)
+│  ├─ Component: Function App (VNet integrated)
 │  ├─ Service Endpoint: Microsoft.Web
-│  ├─ Function App (VNet Integrated)
-│  └─ 251 available IPs
+│  ├─ Delegation: Microsoft.Web/serverFarms
+│  └─ Purpose: Application tier (frontend + backend API)
 │
-├─ Private Endpoint Subnet: 10.0.2.0/24
-│  ├─ Key Vault Private Endpoint (10.0.2.x)
-│  ├─ SQL Database Private Endpoint (10.0.2.x)
-│  ├─ Azure OpenAI Private Endpoint (10.0.2.x)
-│  ├─ Storage Account Private Endpoint (10.0.2.x)
-│  └─ 251 available IPs
+├─ Storage Subnet: 10.0.2.0/24 (251 usable IPs)
+│  ├─ Component: Storage Account Private Endpoint (10.0.2.x)
+│  ├─ Service Endpoint: Microsoft.Storage
+│  ├─ Private DNS: privatelink.blob.core.windows.net
+│  └─ Purpose: Function App backend storage isolation
 │
-└─ SQL Subnet: 10.0.3.0/24
-   ├─ Service Endpoint: Microsoft.Sql
-   ├─ VNet Rules for SQL Server
-   └─ 251 available IPs
+├─ Key Vault Subnet: 10.0.3.0/24 (251 usable IPs)
+│  ├─ Component: Key Vault Private Endpoint (10.0.3.x)
+│  ├─ Private DNS: privatelink.vaultcore.azure.net
+│  └─ Purpose: Secret management tier
+│
+├─ Database Subnet: 10.0.4.0/24 (251 usable IPs)
+│  ├─ Component: SQL Database Private Endpoint (10.0.4.x)
+│  ├─ Service Endpoint: Microsoft.Sql
+│  ├─ Private DNS: privatelink.database.windows.net
+│  └─ Purpose: Data persistence tier
+│
+└─ OpenAI Subnet: 10.0.5.0/24 (251 usable IPs)
+   ├─ Component: Azure OpenAI Private Endpoint (10.0.5.x)
+   ├─ Private DNS: privatelink.openai.azure.com
+   └─ Purpose: AI/ML services tier
 ```
+
+### Subnet Design Rationale
+
+**Why Dedicated Subnets per Component?**
+
+1. **Security Isolation**: 
+   - Each subnet can have its own NSG rules
+   - Prevents lateral movement between services
+   - Microsegmentation best practice
+
+2. **Compliance**:
+   - Meets PCI-DSS, HIPAA network segmentation requirements
+   - Separate data tier from compute tier
+   - Audit trail per subnet
+
+3. **Traffic Control**:
+   - Fine-grained control over which subnets can communicate
+   - Easier to implement zero-trust networking
+   - Service-specific firewall rules
+
+4. **Scalability**:
+   - Each subnet can grow to 251 IPs independently
+   - Add more private endpoints per subnet if needed
+   - No contention for IP space
+
+5. **Operational Clarity**:
+   - Clear separation of concerns
+   - Easier troubleshooting (network issues isolated per tier)
+   - Better monitoring and alerting
 
 ### Private DNS Architecture
 
@@ -73,40 +114,67 @@ Each private endpoint has an associated Private DNS Zone for name resolution wit
 
 **Recommended NSG Rules:**
 
-**Function App Subnet (10.0.1.0/24):**
+#### App Subnet NSG (10.0.1.0/24):
 ```
-Inbound:
-- Allow: Azure Load Balancer (AzureLoadBalancer)
-- Deny: All other inbound traffic
+Inbound Rules:
+Priority 100: Allow AzureLoadBalancer → Any (Port: Any)
+Priority 110: Allow Internet → 443 (HTTPS for Static Web App)
+Priority 120: Allow VirtualNetwork → VirtualNetwork
+Priority 4096: Deny All
 
-Outbound:
-- Allow: VirtualNetwork → 10.0.2.0/24 (Private Endpoints)
-- Allow: VirtualNetwork → 10.0.3.0/24 (SQL Subnet)
-- Allow: Internet (for outbound management)
-- Deny: All other outbound traffic
-```
-
-**Private Endpoint Subnet (10.0.2.0/24):**
-```
-Inbound:
-- Allow: 10.0.1.0/24 → Any (Function App)
-- Allow: 10.0.3.0/24 → Any (SQL Subnet)
-- Deny: All other inbound traffic
-
-Outbound:
-- Allow: VirtualNetwork → VirtualNetwork
-- Deny: All other outbound traffic
+Outbound Rules:
+Priority 100: Allow → 10.0.2.0/24 (Storage Subnet)
+Priority 110: Allow → 10.0.3.0/24 (Key Vault Subnet)
+Priority 120: Allow → 10.0.4.0/24 (Database Subnet)
+Priority 130: Allow → 10.0.5.0/24 (OpenAI Subnet)
+Priority 140: Allow → Internet (For outbound management)
+Priority 4096: Deny All
 ```
 
-**SQL Subnet (10.0.3.0/24):**
+#### Storage Subnet NSG (10.0.2.0/24):
 ```
-Inbound:
-- Allow: 10.0.1.0/24 → 1433 (Function App to SQL)
-- Deny: All other inbound traffic
+Inbound Rules:
+Priority 100: Allow 10.0.1.0/24 → 443 (From App Subnet)
+Priority 4096: Deny All
 
-Outbound:
-- Allow: VirtualNetwork → VirtualNetwork
-- Deny: All other outbound traffic
+Outbound Rules:
+Priority 100: Allow → 10.0.1.0/24 (Response to App Subnet)
+Priority 4096: Deny All
+```
+
+#### Key Vault Subnet NSG (10.0.3.0/24):
+```
+Inbound Rules:
+Priority 100: Allow 10.0.1.0/24 → 443 (From App Subnet)
+Priority 4096: Deny All
+
+Outbound Rules:
+Priority 100: Allow → 10.0.1.0/24 (Response to App Subnet)
+Priority 4096: Deny All
+```
+
+#### Database Subnet NSG (10.0.4.0/24):
+```
+Inbound Rules:
+Priority 100: Allow 10.0.1.0/24 → 1433 (SQL from App Subnet)
+Priority 110: Allow 10.0.1.0/24 → 443 (Management)
+Priority 4096: Deny All
+
+Outbound Rules:
+Priority 100: Allow → 10.0.1.0/24 (Response to App Subnet)
+Priority 110: Allow → AzureMonitor (Diagnostics)
+Priority 4096: Deny All
+```
+
+#### OpenAI Subnet NSG (10.0.5.0/24):
+```
+Inbound Rules:
+Priority 100: Allow 10.0.1.0/24 → 443 (From App Subnet)
+Priority 4096: Deny All
+
+Outbound Rules:
+Priority 100: Allow → 10.0.1.0/24 (Response to App Subnet)
+Priority 4096: Deny All
 ```
 
 ---
