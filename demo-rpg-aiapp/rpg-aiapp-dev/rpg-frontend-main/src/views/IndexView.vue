@@ -4,9 +4,9 @@
       <div class="login-title">ログイン</div>
 
       <v-text-field dark v-model="userid" label="なまえ" outlined />
-      <v-text-field dark v-model="password" label="パスワード" type="password" outlined />
+      <v-text-field dark v-model="password" label="パスワード" type="password" outlined @keyup.enter="login" />
 
-      <v-btn color="white" light block class="mt-4" @click="login">つづきから</v-btn>
+      <v-btn color="white" light block class="mt-4" @click="login" :loading="loading" :disabled="loading">つづきから</v-btn>
 
       <v-btn color="white" style="border:solid white 2px" text to="/signupview" block class="mt-4" tag="router-link">はじめから</v-btn>
 
@@ -25,7 +25,7 @@
 </template>
 
 <script>
-import axios from "axios";
+import apiService from "@/services/api";
 
 export default {
   name: "IndexView",
@@ -34,38 +34,37 @@ export default {
       userid: "",
       password: "",
       errorMessage: "",
-      dialog: false
+      dialog: false,
+      loading: false
     };
   },
   methods: {
-async login() {
-  try {
-    const response = await axios.post(
-      "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/LOGIN",
-      {
-        ID: this.userid,
-        Password: this.password
+    async login() {
+      if (!this.userid || !this.password) {
+        this.errorMessage = "ユーザーIDとパスワードを入力してください。";
+        this.dialog = true;
+        return;
       }
-    );
-      console.log(response.data.result);
 
-    if (response.data.result === "Succeeded") {
-      this.$store.commit("player/setUserId", this.userid);
-      console.log(this.userid);
-      await this.$store.dispatch("player/loadPlayer");
-      console.log("aaa");
+      this.loading = true;
+      try {
+        const response = await apiService.login(this.userid, this.password);
 
-      this.$router.push("/aiview");
-    } else {
-      this.errorMessage = response.data.Message || "ログインに失敗しました。";
-      this.dialog = true;
+        if (response.data.result === "success") {
+          this.$store.commit("player/setUserId", this.userid);
+          await this.$store.dispatch("player/loadPlayer");
+          this.$router.push("/aiview");
+        } else {
+          this.errorMessage = "ログインに失敗しました。";
+          this.dialog = true;
+        }
+      } catch (err) {
+        this.errorMessage = "ログインエラー：ユーザーIDまたはパスワードが正しくありません。";
+        this.dialog = true;
+      } finally {
+        this.loading = false;
+      }
     }
-  } catch (err) {
-    console.error("ログインエラー:", err);
-    this.errorMessage = "ログインエラー：" + (err.response?.data || err.message);
-    this.dialog = true;
-  }
-}
   }
 };
 </script>

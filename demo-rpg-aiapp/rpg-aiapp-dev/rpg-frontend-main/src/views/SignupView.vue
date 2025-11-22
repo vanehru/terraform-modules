@@ -4,9 +4,9 @@
       <div class="signup-title">とうろく</div>
 
       <v-text-field dark v-model="userid" label="なまえ" outlined />
-      <v-text-field dark v-model="password" label="パスワード" type="password" outlined />
+      <v-text-field dark v-model="password" label="パスワード" type="password" outlined @keyup.enter="signup" />
 
-      <v-btn color="white" class="mt-4" block @click="signup">セーブデータをつくる</v-btn>
+      <v-btn color="white" class="mt-4" block @click="signup" :loading="loading" :disabled="loading">セーブデータをつくる</v-btn>
       <v-btn color="white" style="border:solid white 2px" text class="mt-4" block @click="goToLogin">つづきから</v-btn>
 
       <v-dialog v-model="dialog" max-width="400">
@@ -35,7 +35,7 @@
 </template>
 
 <script>
-import axios from "axios";
+import apiService from "@/services/api";
 
 export default {
   name: "SignupView",
@@ -43,56 +43,52 @@ export default {
     return {
       userid: "",
       password: "",
-      displayName: "",
       message: "",
       errorMessage: "",
       dialog: false,
-      successDialog: false
+      successDialog: false,
+      loading: false
     };
   },
   methods: {
-async signup() {
-  if (!this.userid || !this.password) {
-    this.errorMessage = "全ての項目を入力してください。";
-    this.dialog = true;
-    return;
-  }
-
-  try {
-    const response = await axios.post(
-      "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/INSERTUSER",
-      {
-        ID: this.userid,
-        Password: this.password,
-        Name: this.userid
+    async signup() {
+      if (!this.userid || !this.password) {
+        this.errorMessage = "全ての項目を入力してください。";
+        this.dialog = true;
+        return;
       }
-    );
 
-    console.log(response);
+      if (this.password.length < 8) {
+        this.errorMessage = "パスワードは8文字以上である必要があります。";
+        this.dialog = true;
+        return;
+      }
 
-    if (response.data === "登録結果:1件のユーザー情報を登録しました。") {
-      const response2 = await axios.post(
-        "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/INSERTPLAYER",
-        {
-          UserId: this.userid
+      this.loading = true;
+      try {
+        // Register user
+        await apiService.registerUser(this.userid, this.password);
+        
+        // Initialize player data
+        await apiService.initializePlayer(this.userid);
+        
+        this.message = "ユーザー登録が完了しました。";
+        this.successDialog = true;
+        this.errorMessage = "";
+      } catch (err) {
+        if (err.response?.status === 409) {
+          this.errorMessage = "このユーザーIDは既に登録されています。";
+        } else {
+          this.errorMessage = "登録エラー：登録に失敗しました。";
         }
-      );
-      this.message = response2.data.result;
-    } else {
-      this.message = response.data;
+        this.dialog = true;
+      } finally {
+        this.loading = false;
+      }
+    },
+    goToLogin() {
+      this.$router.push("/");
     }
-
-    this.successDialog = true;
-    this.errorMessage = "";
-  } catch (err) {
-    this.errorMessage = "登録エラー：" + (err.response?.data || err.message);
-    this.dialog = true;
-  }
-},
-goToLogin() {
-  this.$router.push("/"); // IndexView に戻る
-}
-
   }
 };
 </script>

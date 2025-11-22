@@ -2,17 +2,65 @@
 import os
 import json
 import logging
+from typing import Dict, List, Any, Optional
 import azure.functions as func
 from openai import AzureOpenAI
 import pyodbc
 from keyvault_helper import get_sql_connection_string
 from password_helper import hash_password, verify_password
 
+# Constants
+DEFAULT_CHAR_ID = 1
+DEFAULT_EXP = 0
+DEFAULT_PARAMETER_VALUE = 50
+DEFAULT_EVENT_ID = 1
+DEFAULT_EVENT_SEQ = 1
+MIN_PARAMETER_VALUE = 0
+MAX_PARAMETER_VALUE = 100
+
 app = func.FunctionApp()
 
 
+def row_to_player_dict(row) -> Dict[str, Any]:
+    """Convert database row to player dictionary."""
+    return {
+        "UserId": row[0],
+        "CharId": row[1],
+        "Exp": row[2],
+        "Parameter1": row[3],
+        "Parameter2": row[4],
+        "Parameter3": row[5],
+        "Parameter4": row[6],
+        "CurrentEventId": row[7],
+        "CurrentSeq": row[8]
+    }
+
+
+def row_to_event_dict(row) -> Dict[str, Any]:
+    """Convert database row to event dictionary."""
+    return {
+        "EventId": row[0],
+        "Seq": row[1],
+        "EventType": row[2],
+        "EventText": row[3]
+    }
+
+
+def validate_parameter_value(value: Any, param_name: str) -> Optional[str]:
+    """Validate parameter value is within acceptable range."""
+    if value is None:
+        return None
+    try:
+        int_value = int(value)
+        if int_value < MIN_PARAMETER_VALUE or int_value > MAX_PARAMETER_VALUE:
+            return f"{param_name} must be between {MIN_PARAMETER_VALUE} and {MAX_PARAMETER_VALUE}"
+    except (ValueError, TypeError):
+        return f"{param_name} must be a valid number"
+    return None
+
+
 @app.route(route="OpenAI", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def openai_function(req: func.HttpRequest) -> func.HttpResponse:
+def openai_function(req: func.HttpRequest) -> func.HttpResponse:
     """MBTI personality scoring using Azure OpenAI GPT-4."""
     logging.info("OpenAI function processed a request.")
     
@@ -120,13 +168,13 @@ MBTI 風に 4 軸（Charisma/E–I, Intuition/N–S, Logic/T–F, Order/J–P）
     except Exception as e:
         logging.error(f"Error in OpenAI function: {str(e)}")
         return func.HttpResponse(
-            f"An error occurred: {str(e)}",
+            "An error occurred while processing your request.",
             status_code=500
         )
 
 
 @app.route(route="SELECTPLAYER", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def select_player(req: func.HttpRequest) -> func.HttpResponse:
+def select_player(req: func.HttpRequest) -> func.HttpResponse:
     """Get player data by UserId."""
     logging.info("プレイヤーデータ取得処理を開始します")
     
@@ -144,37 +192,23 @@ async def select_player(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = """
-            SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
-                   CurrentEventId, CurrentSeq
-            FROM PlayerData 
-            WHERE UserId = ?
-        """
-        
-        cursor.execute(sql, user_id)
-        rows = cursor.fetchall()
-        
-        result_list = []
-        for row in rows:
-            result_list.append({
-                "UserId": row[0],
-                "CharId": row[1],
-                "Exp": row[2],
-                "Parameter1": row[3],
-                "Parameter2": row[4],
-                "Parameter3": row[5],
-                "Parameter4": row[6],
-                "CurrentEventId": row[7],
-                "CurrentSeq": row[8]
-            })
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
+                       CurrentEventId, CurrentSeq
+                FROM PlayerData 
+                WHERE UserId = ?
+            """
+            
+            cursor.execute(sql, user_id)
+            rows = cursor.fetchall()
+            
+            result_list = [row_to_player_dict(row) for row in rows]
         
         return func.HttpResponse(
             json.dumps({"List": result_list}, ensure_ascii=False),
@@ -187,43 +221,32 @@ async def select_player(req: func.HttpRequest) -> func.HttpResponse:
             "PlayerData 取得エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="SELECTALLPLAYER", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def select_all_player(req: func.HttpRequest) -> func.HttpResponse:
+def select_all_player(req: func.HttpRequest) -> func.HttpResponse:
     """Get all player data."""
     logging.info("全プレイヤーデータ取得処理を開始します")
     
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = """
-            SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4,
-                   CurrentEventId, CurrentSeq
-            FROM PlayerData
-        """
-        
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        
-        result_list = []
-        for row in rows:
-            result_list.append({
-                "UserId": row[0],
-                "CharId": row[1],
-                "Exp": row[2],
-                "Parameter1": row[3],
-                "Parameter2": row[4],
-                "Parameter3": row[5],
-                "Parameter4": row[6],
-                "CurrentEventId": row[7],
-                "CurrentSeq": row[8]
-            })
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4,
+                       CurrentEventId, CurrentSeq
+                FROM PlayerData
+            """
+            
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            
+            result_list = [row_to_player_dict(row) for row in rows]
         
         return func.HttpResponse(
             json.dumps({"List": result_list}, ensure_ascii=False),
@@ -236,34 +259,28 @@ async def select_all_player(req: func.HttpRequest) -> func.HttpResponse:
             "全プレイヤーデータ取得エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="SELECTEVENTS", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def select_events(req: func.HttpRequest) -> func.HttpResponse:
+def select_events(req: func.HttpRequest) -> func.HttpResponse:
     """Get event data."""
     logging.info("イベントデータ取得処理を開始します")
     
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = "SELECT EventId, Seq, EventType, EventText FROM EventData"
-        
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        
-        result_list = []
-        for row in rows:
-            result_list.append({
-                "EventId": row[0],
-                "Seq": row[1],
-                "EventType": row[2],
-                "EventText": row[3]
-            })
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = "SELECT EventId, Seq, EventType, EventText FROM EventData"
+            
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            
+            result_list = [row_to_event_dict(row) for row in rows]
         
         return func.HttpResponse(
             json.dumps({"List": result_list}, ensure_ascii=False),
@@ -276,10 +293,13 @@ async def select_events(req: func.HttpRequest) -> func.HttpResponse:
             "イベントデータ取得エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="UPDATE", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def update_player(req: func.HttpRequest) -> func.HttpResponse:
+def update_player(req: func.HttpRequest) -> func.HttpResponse:
     """Update player data."""
     logging.info("プレイヤーデータ更新処理を開始します")
     
@@ -307,25 +327,31 @@ async def update_player(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    # Validate parameter values
+    for value, name in [(param1, "Parameter1"), (param2, "Parameter2"), 
+                         (param3, "Parameter3"), (param4, "Parameter4")]:
+        error = validate_parameter_value(value, name)
+        if error:
+            return func.HttpResponse(error, status_code=400)
+    
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = """
-            UPDATE PlayerData 
-            SET Exp = ?, Parameter1 = ?, Parameter2 = ?, Parameter3 = ?, Parameter4 = ?,
-                CurrentEventId = ?, CurrentSeq = ?
-            WHERE UserId = ? AND CharId = ?
-        """
-        
-        cursor.execute(sql, exp, param1, param2, param3, param4, 
-                      current_event_id, current_seq, user_id, char_id)
-        conn.commit()
-        
-        affected_rows = cursor.rowcount
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = """
+                UPDATE PlayerData 
+                SET Exp = ?, Parameter1 = ?, Parameter2 = ?, Parameter3 = ?, Parameter4 = ?,
+                    CurrentEventId = ?, CurrentSeq = ?
+                WHERE UserId = ? AND CharId = ?
+            """
+            
+            cursor.execute(sql, exp, param1, param2, param3, param4, 
+                          current_event_id, current_seq, user_id, char_id)
+            conn.commit()
+            
+            affected_rows = cursor.rowcount
         
         return func.HttpResponse(
             f"更新されたレコード数: {affected_rows}",
@@ -337,10 +363,13 @@ async def update_player(req: func.HttpRequest) -> func.HttpResponse:
             "プレイヤーデータ更新エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="INSERTUSER", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def insert_user(req: func.HttpRequest) -> func.HttpResponse:
+def insert_user(req: func.HttpRequest) -> func.HttpResponse:
     """Register a new user with hashed password."""
     logging.info("ユーザー登録処理を開始します")
     
@@ -361,21 +390,26 @@ async def insert_user(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    # Validate password length
+    if len(password) < 8:
+        return func.HttpResponse(
+            "Password は8文字以上である必要があります。",
+            status_code=400
+        )
+    
+    conn = None
     try:
         # Hash password using PBKDF2
         hashed_password = hash_password(password)
         
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = "INSERT INTO UserData (UserId, Password) VALUES (?, ?)"
-        
-        cursor.execute(sql, user_id, hashed_password)
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = "INSERT INTO UserData (UserId, Password) VALUES (?, ?)"
+            
+            cursor.execute(sql, user_id, hashed_password)
+            conn.commit()
         
         return func.HttpResponse(
             "ユーザー登録が完了しました。",
@@ -392,10 +426,13 @@ async def insert_user(req: func.HttpRequest) -> func.HttpResponse:
             "ユーザー登録エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="INSERTPLAYER", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def insert_player(req: func.HttpRequest) -> func.HttpResponse:
+def insert_player(req: func.HttpRequest) -> func.HttpResponse:
     """Initialize player data."""
     logging.info("プレイヤーデータ初期化処理を開始します")
     
@@ -408,7 +445,7 @@ async def insert_player(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     user_id = req_body.get("UserId")
-    char_id = req_body.get("CharId", 1)
+    char_id = req_body.get("CharId", DEFAULT_CHAR_ID)
     
     if not user_id:
         return func.HttpResponse(
@@ -416,23 +453,24 @@ async def insert_player(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = """
-            INSERT INTO PlayerData 
-            (UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
-             CurrentEventId, CurrentSeq)
-            VALUES (?, ?, 0, 50, 50, 50, 50, 1, 1)
-        """
-        
-        cursor.execute(sql, user_id, char_id)
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = """
+                INSERT INTO PlayerData 
+                (UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
+                 CurrentEventId, CurrentSeq)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            cursor.execute(sql, user_id, char_id, DEFAULT_EXP, 
+                          DEFAULT_PARAMETER_VALUE, DEFAULT_PARAMETER_VALUE,
+                          DEFAULT_PARAMETER_VALUE, DEFAULT_PARAMETER_VALUE,
+                          DEFAULT_EVENT_ID, DEFAULT_EVENT_SEQ)
+            conn.commit()
         
         return func.HttpResponse(
             "プレイヤーデータの初期化が完了しました。",
@@ -444,10 +482,13 @@ async def insert_player(req: func.HttpRequest) -> func.HttpResponse:
             "プレイヤーデータ初期化エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route(route="LOGIN", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
-async def login(req: func.HttpRequest) -> func.HttpResponse:
+def login(req: func.HttpRequest) -> func.HttpResponse:
     """Authenticate user with password verification."""
     logging.info("ログイン処理を開始します")
     
@@ -468,18 +509,16 @@ async def login(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    conn = None
     try:
-        connection_string = await get_sql_connection_string()
+        connection_string = get_sql_connection_string()
         conn = pyodbc.connect(connection_string)
-        cursor = conn.cursor()
         
-        sql = "SELECT Password FROM UserData WHERE UserId = ?"
-        
-        cursor.execute(sql, user_id)
-        row = cursor.fetchone()
-        
-        cursor.close()
-        conn.close()
+        with conn.cursor() as cursor:
+            sql = "SELECT Password FROM UserData WHERE UserId = ?"
+            
+            cursor.execute(sql, user_id)
+            row = cursor.fetchone()
         
         if not row:
             return func.HttpResponse(
@@ -507,3 +546,6 @@ async def login(req: func.HttpRequest) -> func.HttpResponse:
             "ログイン処理エラーが発生しました。",
             status_code=500
         )
+    finally:
+        if conn:
+            conn.close()

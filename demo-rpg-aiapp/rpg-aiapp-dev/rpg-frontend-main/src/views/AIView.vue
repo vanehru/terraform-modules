@@ -73,7 +73,7 @@
 </template>
 
 <script>
-  import axios from "axios";
+  import apiService from "@/services/api";
   import {
     init
   } from "ityped";
@@ -200,12 +200,11 @@
         });
       },
       async nextLine() {
-        console.log("this.next: " + this.next + "    this.send: " + this.send);
-        if (this.next == false && this.send == true) {
+        if (this.next === false && this.send === true) {
           this.next = true;
           this.send = false;
         }
-        if (!this.lastLine && this.send == false) {
+        if (!this.lastLine && this.send === false) {
           this.next = false;
           return;
         }
@@ -269,12 +268,8 @@
           });
         }
         try {
-          const resp = await axios.post(
-            "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/OpenAI?", {
-              message: send
-            }
-          );
-          console.log(send);
+          const resp = await apiService.callOpenAI(send);
+          
           const parsed = JSON.parse(resp.data.Content[0].Text);
           const before = {
             p1: this.player.parameter1,
@@ -304,7 +299,6 @@
           this.send = true;
           this.next = true;
         } catch (e) {
-          console.error(e);
           this.pendingStatMessages = ["評価に失敗しました。"];
         }
         this.message = "";

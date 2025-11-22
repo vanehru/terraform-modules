@@ -4,7 +4,7 @@ from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 
 
-async def get_sql_connection_string():
+def get_sql_connection_string():
     """
     Retrieve SQL connection string from Azure Key Vault.
     

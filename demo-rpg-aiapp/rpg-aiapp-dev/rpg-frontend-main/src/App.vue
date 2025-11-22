@@ -52,9 +52,9 @@
         const bgm = this.$refs.bgm;
         if (bgm) {
           await bgm.play();
-          if (bgm.volume == 0 || bgm.volume == 1){
+          if (bgm.volume === 0 || bgm.volume === 1) {
             bgm.volume = 0.1;
-          }else{
+          } else {
             bgm.volume = 0;
           }
         }

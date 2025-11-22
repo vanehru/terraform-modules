@@ -1,10 +1,19 @@
-import axios from "axios";
+import apiService from "@/services/api";
+
+// Constants
+const EVOLUTION_THRESHOLD = 1500;
+const CHAR_ID_POWER = 10;
+const CHAR_ID_IMAGINATION = 20;
+const CHAR_ID_WISDOM = 30;
+const CHAR_ID_SPEED = 40;
+const CHAR_ID_DEFAULT = 0;
+const EVENT_ID_END = 999;
 
 export default {
   namespaced: true,
 
   state: {
-    userId: "なまえ",
+    userId: null,
     charId: 0,
     exp: 0,
     parameter1: 0,
@@ -13,7 +22,9 @@ export default {
     parameter4: 0,
     currentEventId: 1,
     currentLine: 0,
-    lines: []
+    lines: [],
+    loading: false,
+    error: null
   },
 
   getters: {
@@ -21,10 +32,9 @@ export default {
       return state.lines[state.currentLine] || null;
     },
     Total(state) {
-      const Sum = state.Items.reduce((Sum, item) => Sum + item.Amount, 0);
-      return Sum;
+      // Legacy getter - kept for compatibility
+      return state.Items ? state.Items.reduce((Sum, item) => Sum + item.Amount, 0) : 0;
     },
-
     lastLine(state) {
       return state.currentLine < state.lines.length - 1;
     },
@@ -50,7 +60,6 @@ export default {
       state.parameter4 = item.parameter4;
       state.currentEventId = item.currentEventId;
       state.currentSeq = item.currentSeq;
-      console.log(state);
     },
     setUserId(state, userId) {
       state.userId = userId;
@@ -74,7 +83,7 @@ export default {
       state.parameter3 += p3;
       state.parameter4 += p4;
       state.exp += p1 + p2 + p3 + p4;
-      if (state.exp >= 1500) {
+      if (state.exp >= EVOLUTION_THRESHOLD) {
         let maxParam = Math.max(
           state.parameter1,
           state.parameter2,
@@ -82,22 +91,21 @@ export default {
           state.parameter4
         );
         if (maxParam === state.parameter1) {
-          state.charId = 10;
+          state.charId = CHAR_ID_POWER;
         } else if (maxParam === state.parameter2) {
-          state.charId = 20;
+          state.charId = CHAR_ID_IMAGINATION;
         } else if (maxParam === state.parameter3) {
-          state.charId = 30;
+          state.charId = CHAR_ID_WISDOM;
         } else if (maxParam === state.parameter4) {
-          state.charId = 40;
+          state.charId = CHAR_ID_SPEED;
         } else {
-          state.charId = 0;
-          console.log("進化エラー");
+          state.charId = CHAR_ID_DEFAULT;
         }
         state.lines.push({
           speaker: "SYSTEM",
           text: `なんと、${state.userId}は進化した！`
         });
-        state.currentEventId = 999;
+        state.currentEventId = EVENT_ID_END;
       }
     },
     setProgress(state, item) {
@@ -107,18 +115,27 @@ export default {
       if (item.seq !== undefined && item.seq !== null) {
         state.currentLine = item.seq;
       }
+    },
+    setLoading(state, loading) {
+      state.loading = loading;
+    },
+    setError(state, error) {
+      state.error = error;
     }
   },
 
   actions: {
     async loadPlayer({ state, commit }) {
+      commit('setLoading', true);
+      commit('setError', null);
       try {
-        const response = await axios.post(
-          "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/SELECTPLAYER",
-          { UserId: state.userId }
-        );
+        const response = await apiService.getPlayer(state.userId);
 
-        const playerData = response.data.PlayerDataList[0];
+        if (!response.data.List || response.data.List.length === 0) {
+          throw new Error('Player data not found');
+        }
+
+        const playerData = response.data.List[0];
         commit("setPlayer", {
           userId: playerData.UserId,
           charId: playerData.CharId,
@@ -128,22 +145,20 @@ export default {
           parameter3: playerData.Parameter3,
           parameter4: playerData.Parameter4,
           currentEventId: playerData.CurrentEventId ?? 1,
-          currentLine: playerData.CurrentSeq ?? 0
+          currentSeq: playerData.CurrentSeq ?? 0
         });
       } catch (e) {
-        console.error("プレイヤーデータ取得失敗:", e);
+        commit('setError', 'Failed to load player data');
         throw e;
+      } finally {
+        commit('setLoading', false);
       }
     },
 
     async loadEvent({ state, commit }) {
       try {
-        const url =
-          "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/SELECTEVENTS?eventId=" +
-          state.currentEventId;
-        //select * from eventtable where eventid=?? orderby line; ←SQL文
-        const response = await axios.get(url);
-        const eventLines = response.data.EventLines || [];
+        const response = await apiService.getEvents(state.currentEventId);
+        const eventLines = response.data.List || [];
         const lines = [];
         for (let i = 0; i < eventLines.length; i++) {
           if (eventLines[i].Speaker === "じぶん") {
@@ -165,7 +180,6 @@ export default {
       } catch (e) {
         commit("setLines", [
           { speaker: "だれか", text: "イベントID: " + state.currentEventId },
-
           { speaker: "だれか", text: "ひとことめ" },
           { speaker: "だれか", text: "ふたことめ" },
           { speaker: "じぶん", text: "最初のセリフ" },
@@ -175,20 +189,17 @@ export default {
     },
 
     async saveAll({ state }) {
-      await axios.post(
-        "https://rpg-funcapp-guddfdfpg8h8ere4.japaneast-01.azurewebsites.net/api/UPDATE",
-        {
-          UserId: state.userId,
-          CharId: state.charId,
-          Exp: state.exp,
-          Parameter1: state.parameter1,
-          Parameter2: state.parameter2,
-          Parameter3: state.parameter3,
-          Parameter4: state.parameter4,
-          CurrentEventId: state.currentEventId,
-          CurrentSeq: state.currentLine
-        }
-      );
+      await apiService.updatePlayer({
+        UserId: state.userId,
+        CharId: state.charId,
+        Exp: state.exp,
+        Parameter1: state.parameter1,
+        Parameter2: state.parameter2,
+        Parameter3: state.parameter3,
+        Parameter4: state.parameter4,
+        CurrentEventId: state.currentEventId,
+        CurrentSeq: state.currentLine
+      });
     }
   }
 };
