@@ -1,0 +1,654 @@
+﻿// Install the .NET library via NuGet: dotnet add package Azure.AI.OpenAI --prerelease
+using Azure;
+using Azure.AI.OpenAI;
+using AzureOpenAISample.Security;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using OpenAI.Chat;
+using System.Data;
+using System.Net;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using static System.Environment;
+
+namespace AzureOpenAISample
+{
+    public class Function1
+    {
+        private readonly ILogger<Function1> _logger;
+
+        public Function1(ILogger<Function1> logger)
+        {
+            _logger = logger;
+        }
+
+        [Function("OpenAI")]
+        public async Task<HttpResponseData> Run(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequestData req)
+        {
+
+            // 中身はRunAsync()と同じ
+            // Retrieve the OpenAI endpoint from environment variables
+            var endpoint = GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") ?? "https://m3h-rintarotsuka-openai.openai.azure.com/";
+            if (string.IsNullOrEmpty(endpoint))
+            {
+                return new BadRequestObjectResult("Please set the AZURE_OPENAI_ENDPOINT environment variable.");
+            }
+
+            var key = GetEnvironmentVariable("AZURE_OPENAI_KEY");
+            if (string.IsNullOrEmpty(key))
+            {
+                return new BadRequestObjectResult("Please set the AZURE_OPENAI_KEY environment variable.");
+            }
+
+            AzureKeyCredential credential = new AzureKeyCredential(key);
+
+            // Initialize the AzureOpenAIClient
+            AzureOpenAIClient azureClient = new(new Uri(endpoint), credential);
+
+            // Initialize the ChatClient with the specified deployment name
+            ChatClient chatClient = azureClient.GetChatClient("gpt-4o");
+            string userMessage = req.Query["message"];
+            if (string.IsNullOrEmpty(userMessage))
+            {
+                string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                dynamic data = JsonConvert.DeserializeObject(requestBody);
+                userMessage = data?.message;
+                
+            }
+            // List of messages to send
+            var messages = new List<ChatMessage>
+            {
+                new SystemChatMessage(@"
+【目的】
+MBTI 風に 4 軸（Charisma/E–I, Intuition/N–S, Logic/T–F, Order/J–P）を **0–100（50基準）**で採点する。
+**強い傾向は極端値に寄せる（中間はできるだけ避ける）。**
+
+【スコア方針（大胆化）】
+
+* 高いほど **左側**（E/N/T/P）。低いほど **右側**（I/S/F/J）。
+* シグナル強度で目安を固定：
+
+  * **強**：95/5（±45）
+  * **中**：80/20（±30）
+  * **弱**：65/35（±15）
+* **何かしら判定材料があれば 50±5 に収めない**（最低でも 65/35 か 35/65 へ）。
+* 複数強シグナルが同方向に重なれば 98/2 まで可（0–100 でクリップ）。
+* 矛盾して同程度なら 45–55 に散らす。意味不明は **50 固定**。
+
+【判定ルール（簡潔）】
+
+1. 返答中の語句・行動意図を各軸にマッピング（例）：
+
+   * **Charisma(E–I)**：人に話しかける/リードする/社交的=E、独力/静か/一人で整理=I
+   * **Intuition(N–S)**：可能性/概念/将来像=N、事実/手順/具体= S
+   * **Logic(T–F)**：根拠/効率/一貫性=T、配慮/関係/感情=F
+   * **Order(J–P)**：計画/締切遵守/決める=J、柔軟/即興/様子見=P
+2. 強度は言い切り/行動の即時性/具体語の濃さで判定（強・中・弱）。
+3. 軸ごとに 50 を起点に強度ぶんだけ ± 加算し、0–100 で丸めて出力。
+4. 特殊語「m3h20252q」なら全軸 **10000**。
+
+            【出力形式】
+
+            - 出力は必ず4パラメータとその数値のみをJSON形式で返す  
+            - 改行や文字を一切入れず、必ず次の形式を守ること  
+
+            {""Charisma"":,""Intuition"":,""Logic"":,""Order"":}
+
+            - 例（特殊条件「m3h20252q」が含まれる場合）：  
+            {""Charisma"":1000,""Intuition"":1000,""Logic"":1000,""Order"":1000}
+ 
+【例（参考・返答→出力）】
+
+* 「今すぐ皆を集めて相談乗る。資料は後で詰める」→ Charisma 95, Intuition 80, Logic 35, Order 70
+* 「一人で要件洗い出して計画立てる」→ Charisma 20, Intuition 35, Logic 80, Order 10
+            "),
+
+                new UserChatMessage(userMessage) // POSTで受け取ったメッセージを追加
+            };
+
+            // Create chat completion options
+
+            var options = new ChatCompletionOptions
+            {
+                Temperature = (float)0,
+                MaxOutputTokenCount = 6553,
+
+                TopP = (float)0.95,
+                FrequencyPenalty = (float)0,
+                PresencePenalty = (float)0
+            };
+
+           var jsonOptions = new JsonSerializerOptions
+           {
+               WriteIndented = true,
+               Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+           };
+
+           try
+           {
+               // チャット完了要求を作成する
+               ChatCompletion completion = await chatClient.CompleteChatAsync(messages, options);
+
+               // 応答を印刷する
+               if (completion != null)
+               {
+                   // 日本語対応
+                   return new OkObjectResult(System.Text.Json.JsonSerializer.Serialize(completion, jsonOptions));
+               }
+               else
+               {
+                   return new OkObjectResult("No response received.");
+               }
+           }
+           catch (Exception ex)
+           {
+               return new BadRequestObjectResult($"An error occurred: {ex.Message}");
+           }
+
+        }
+
+        [FunctionName("SELECTPLAYER")]
+        public static async Task<IActionResult> RunSelectPlayer(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("プレイヤーデータ取得処理を開始します");
+
+            string responseMessage = "SQL RESULT:";
+
+            try
+            {
+                // クエリ or POST Body から UserId を取得
+                string userId = req.Query["UserId"];
+                if (string.IsNullOrEmpty(userId))
+                {
+                    string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                    dynamic data = JsonConvert.DeserializeObject(requestBody);
+                    userId = data?.UserId;
+                }
+
+                if (string.IsNullOrEmpty(userId))
+                {
+                    return new BadRequestObjectResult("UserId パラメータが必要です。");
+                }
+
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    string sql = @"SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, CurrentEventId, CurrentSeq
+                           FROM PlayerData
+                           WHERE UserId = @UserId";
+
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+                        command.Parameters.AddWithValue("@UserId", userId);
+
+                        connection.Open();
+                        using (SqlDataReader reader = command.ExecuteReader())
+                        {
+                            PlayerDataList resultList = new PlayerDataList();
+
+                            while (reader.Read())
+                            {
+                                resultList.List.Add(new PlayerDataRow
+                                {
+                                    UserId = reader.GetString(0),
+                                    CharId = reader.GetInt32(1),
+                                    Exp = reader.GetInt32(2),
+                                    Parameter1 = reader.GetInt32(3),
+                                    Parameter2 = reader.GetInt32(4),
+                                    Parameter3 = reader.GetInt32(5),
+                                    Parameter4 = reader.GetInt32(6),
+                                    CurrentEventId = reader.GetInt32(7),
+                                    CurrentSeq = reader.GetInt32(8)
+                                });
+                            }
+
+                            responseMessage = JsonConvert.SerializeObject(resultList);
+                        }
+                    }
+                }
+            }
+            catch (SqlException e)
+            {
+                log.LogError(e, "PlayerData 取得中にエラーが発生しました。");
+                return new ObjectResult("PlayerData 取得エラーが発生しました。") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+        [FunctionName("SELECTALLPLAYER")]
+        public static async Task<IActionResult> RunSelectAllPlayer(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("プレイヤーデータ取得処理を開始します");
+
+            string responseMessage = "SQL RESULT:";
+
+            try
+            {
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    string sql = @"SELECT * FROM PlayerData";
+
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+
+                        connection.Open();
+                        using (SqlDataReader reader = command.ExecuteReader())
+                        {
+                            PlayerDataList resultList = new PlayerDataList();
+
+                            while (reader.Read())
+                            {
+                                resultList.List.Add(new PlayerDataRow
+                                {
+                                    UserId = reader.GetString(0),
+                                    CharId = reader.GetInt32(1),
+                                    Exp = reader.GetInt32(2),
+                                    Parameter1 = reader.GetInt32(3),
+                                    Parameter2 = reader.GetInt32(4),
+                                    Parameter3 = reader.GetInt32(5),
+                                    Parameter4 = reader.GetInt32(6),
+                                    CurrentEventId = reader.GetInt32(7),
+                                    CurrentSeq = reader.GetInt32(8)
+                                });
+                            }
+
+                            responseMessage = JsonConvert.SerializeObject(resultList);
+                        }
+                    }
+                }
+            }
+            catch (SqlException e)
+            {
+                log.LogError(e, "PlayerData 取得中にエラーが発生しました。");
+                return new ObjectResult("PlayerData 取得エラーが発生しました。") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+
+
+        [FunctionName("SELECTEVENTS")]
+        public static async Task<IActionResult> RunSelectEvents(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            string responseMessage = "SQL RESULT:";
+
+            try
+            {
+                // クエリパラメータから EventId を取得
+                string eventIdStr = req.Query["eventId"];
+                if (string.IsNullOrEmpty(eventIdStr))
+                {
+                    return new BadRequestObjectResult("eventId パラメータが必要です。");
+                }
+
+                int eventId = int.Parse(eventIdStr);
+
+                // 接続文字列の取得
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    // 実行するクエリ
+                    string sql = @"SELECT EventId, Seq, Speaker, Text FROM EventTable WHERE EventId = @EventId ORDER BY Seq ASC";
+
+
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+                        command.Parameters.AddWithValue("@EventId", eventId);
+
+                        connection.Open();
+                        using (SqlDataReader reader = command.ExecuteReader())
+                        {
+                            // 結果を格納するリスト
+                            var resultList = new List<object>();
+
+                            while (reader.Read())
+                            {
+                                resultList.Add(new
+                                {
+                                    EventId = reader.GetInt32(reader.GetOrdinal("EventId")),
+                                    Seq = reader.GetInt32(reader.GetOrdinal("Seq")),
+                                    Speaker = reader.IsDBNull(reader.GetOrdinal("Speaker"))
+                                        ? ""
+                                        : reader.GetString(reader.GetOrdinal("Speaker")),
+                                    Text = reader.IsDBNull(reader.GetOrdinal("Text"))
+                                        ? ""
+                                        : reader.GetString(reader.GetOrdinal("Text"))
+                                });
+                            }
+
+                            // JSON形式で返却
+                            responseMessage = JsonConvert.SerializeObject(
+                                new { EventLines = resultList });
+                        }
+                    }
+                }
+            }
+            catch (SqlException e)
+            {
+                Console.WriteLine(e.ToString());
+                return new ObjectResult("SQLエラーが発生しました") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+
+        [FunctionName("UPDATE")]
+        public static async Task<IActionResult> RunUpdate(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("PlayerData 更新処理を開始します");
+
+            string responseMessage = "UPDATE RESULT:";
+
+            // GET/POST両対応のパラメータ取得
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            dynamic data = JsonConvert.DeserializeObject(requestBody);
+
+            string userId = req.Query["UserId"];
+            string charId = req.Query["CharId"];
+            string exp = req.Query["Exp"];
+            string parameter1 = req.Query["Parameter1"];
+            string parameter2 = req.Query["Parameter2"];
+            string parameter3 = req.Query["Parameter3"];
+            string parameter4 = req.Query["Parameter4"];
+            string currentEventId = req.Query["CurrentEventId"];
+            string currentSeq = req.Query["CurrentSeq"];
+
+            userId = userId ?? data?.UserId;
+            charId = charId ?? data?.CharId;
+            exp = exp ?? data?.Exp;
+            parameter1 = parameter1 ?? data?.Parameter1;
+            parameter2 = parameter2 ?? data?.Parameter2;
+            parameter3 = parameter3 ?? data?.Parameter3;
+            parameter4 = parameter4 ?? data?.Parameter4;
+            currentEventId = currentEventId ?? data?.CurrentEventId;
+            currentSeq = currentSeq ?? data?.CurrentSeq;
+
+            // UserIdは必須
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return new BadRequestObjectResult("UserId が設定されていません。");
+            }
+
+            try
+            {
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    // UPDATE文
+                    string sql = @"
+                UPDATE PlayerData
+                SET 
+                  CharId = ISNULL(@CharId, CharId),
+                  Exp = ISNULL(@Exp, Exp),
+                  Parameter1 = ISNULL(@Parameter1, Parameter1),
+                  Parameter2 = ISNULL(@Parameter2, Parameter2),
+                  Parameter3 = ISNULL(@Parameter3, Parameter3),
+                  Parameter4 = ISNULL(@Parameter4, Parameter4),
+                  CurrentEventId = ISNULL(@CurrentEventId, CurrentEventId),
+                  CurrentSeq = ISNULL(@CurrentSeq, CurrentSeq)
+                WHERE UserId = @UserId";
+
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+                        // パラメータを設定（null対応）
+                        command.Parameters.AddWithValue("@UserId", userId);
+                        command.Parameters.AddWithValue("@CharId", string.IsNullOrWhiteSpace(charId) ? (object)DBNull.Value : int.Parse(charId));
+                        command.Parameters.AddWithValue("@Exp", string.IsNullOrWhiteSpace(exp) ? (object)DBNull.Value : int.Parse(exp));
+                        command.Parameters.AddWithValue("@Parameter1", string.IsNullOrWhiteSpace(parameter1) ? (object)DBNull.Value : int.Parse(parameter1));
+                        command.Parameters.AddWithValue("@Parameter2", string.IsNullOrWhiteSpace(parameter2) ? (object)DBNull.Value : int.Parse(parameter2));
+                        command.Parameters.AddWithValue("@Parameter3", string.IsNullOrWhiteSpace(parameter3) ? (object)DBNull.Value : int.Parse(parameter3));
+                        command.Parameters.AddWithValue("@Parameter4", string.IsNullOrWhiteSpace(parameter4) ? (object)DBNull.Value : int.Parse(parameter4));
+                        command.Parameters.AddWithValue("@CurrentEventId", string.IsNullOrWhiteSpace(currentEventId) ? (object)DBNull.Value : int.Parse(currentEventId));
+                        command.Parameters.AddWithValue("@CurrentSeq", string.IsNullOrWhiteSpace(currentSeq) ? (object)DBNull.Value : int.Parse(currentSeq));
+
+                        connection.Open();
+                        int result = command.ExecuteNonQuery();
+
+                        JObject jsonObj = new JObject { ["result"] = $"{result}件のプレイヤーデータを更新しました。" };
+                        responseMessage = JsonConvert.SerializeObject(jsonObj, Formatting.None);
+                    }
+                }
+            }
+            catch (SqlException e)
+            {
+                log.LogError(e, "PlayerData 更新中にエラーが発生しました。");
+                return new ObjectResult("PlayerData 更新エラーが発生しました。") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+
+
+        // ユーザー登録（Users テーブル）
+        [FunctionName("INSERTUSER")]
+        public static async Task<IActionResult> RunInsertUser(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("ユーザー登録処理を開始します");
+
+            string responseMessage = "登録結果:";
+
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            dynamic data = JsonConvert.DeserializeObject(requestBody);
+
+            string id = data?.ID;
+            string password = data?.Password;
+            string name = data?.Name;
+
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(name))
+            {
+                return new BadRequestObjectResult("ID、パスワード、または表示名が設定されていません。");
+            }
+
+            try
+            {
+                byte[] hashedPassword = PBKDF2Hash.HashPasswordAsBytes(password);
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    string sql = "INSERT INTO Users (UserId, PasswordHash, UserName) VALUES (@UserId, @PasswordHash, @UserName)";
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+                        command.Parameters.AddWithValue("@UserId", id);
+                        command.Parameters.Add("@PasswordHash", SqlDbType.VarBinary, 256).Value = hashedPassword;
+                        command.Parameters.AddWithValue("@UserName", name);
+
+                        connection.Open();
+                        int result = command.ExecuteNonQuery();
+                        responseMessage += $"{result}件のユーザー情報を登録しました。";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "ユーザー登録中にエラーが発生しました。");
+                return new ObjectResult("内部エラーが発生しました。") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+
+
+        // プレイヤーデータ登録（PlayerData テーブル）
+        [FunctionName("INSERTPLAYER")]
+        public static async Task<IActionResult> RunInsertPlayer(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("プレイヤーデータ登録処理を開始します");
+
+            string responseMessage = "INSERT RESULT:";
+
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            dynamic data = JsonConvert.DeserializeObject(requestBody);
+
+            string userId = data?.UserId;
+
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return new BadRequestObjectResult("UserId が設定されていません。");
+            }
+
+            try
+            {
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    string sql = @"
+                INSERT INTO PlayerData
+                (UserId)
+                VALUES (@UserId)";
+
+                    using (SqlCommand command = new SqlCommand(sql, connection))
+                    {
+                        command.Parameters.AddWithValue("@UserId", userId);
+
+                        connection.Open();
+                        int result = command.ExecuteNonQuery();
+
+                        JObject jsonObj = new JObject { ["result"] = $"{result}件のプレイヤーデータを登録しました。" };
+                        responseMessage = JsonConvert.SerializeObject(jsonObj, Formatting.None);
+                    }
+                }
+            }
+            catch (SqlException e)
+            {
+                log.LogError(e, "PlayerData 登録中にエラーが発生しました。");
+                return new ObjectResult("PlayerData 登録エラーが発生しました。") { StatusCode = 500 };
+            }
+
+            return new OkObjectResult(responseMessage);
+        }
+
+        [FunctionName("LOGIN")]
+        public static async Task<IActionResult> RunLogin(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("ログイン認証処理を開始します");
+
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            dynamic data = JsonConvert.DeserializeObject(requestBody);
+
+            string id = data?.ID;
+            string password = data?.Password;
+
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(password))
+            {
+                return new BadRequestObjectResult("IDまたはパスワードが未入力です。");
+            }
+
+            try
+            {
+                string connectionString = await KeyVault.GetSqlConnectionStringAsync();
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    // Users テーブルからパスワードと名前を取得
+                    string sqlUser = "SELECT PasswordHash, UserName FROM Users WHERE UserId = @UserId";
+                    using (SqlCommand command = new SqlCommand(sqlUser, connection))
+                    {
+                        command.Parameters.AddWithValue("@UserId", id);
+
+                        connection.Open();
+                        using (SqlDataReader reader = command.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                byte[] storedHash = reader.IsDBNull(0) ? null : reader.GetSqlBinary(0).Value;
+                                string userName = reader.IsDBNull(1) ? "Unknown" : reader.GetString(1);
+
+                                if (storedHash != null && PBKDF2Hash.VerifyPassword(password, storedHash))
+                                {
+                                    reader.Close();
+
+                                    // 認証OKなら PlayerData を取得
+                                    string sqlPlayer = @"SELECT CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, CurrentEventId, CurrentSeq 
+                                                 FROM PlayerData WHERE UserId = @UserId";
+                                    using (SqlCommand cmdPlayer = new SqlCommand(sqlPlayer, connection))
+                                    {
+                                        cmdPlayer.Parameters.AddWithValue("@UserId", id);
+                                        using (SqlDataReader pr = cmdPlayer.ExecuteReader())
+                                        {
+                                            if (pr.Read())
+                                            {
+                                                return new OkObjectResult(new
+                                                {
+                                                    Result = "Succeeded",
+                                                    Message = "認証に成功しました",
+                                                    UserId = id,
+                                                    UserName = userName,
+                                                    CharId = pr.GetInt32(0),
+                                                    Exp = pr.GetInt32(1),
+                                                    Parameter1 = pr.GetInt32(2),
+                                                    Parameter2 = pr.GetInt32(3),
+                                                    Parameter3 = pr.GetInt32(4),
+                                                    Parameter4 = pr.GetInt32(5),
+                                                    CurrentEventId = pr.GetInt32(6),
+                                                    CurrentSeq = pr.GetInt32(7)
+                                                });
+                                            }
+                                            else
+                                            {
+                                                return new OkObjectResult(new
+                                                {
+                                                    Result = "Succeeded",
+                                                    Message = "認証に成功しました（プレイヤーデータ未登録）",
+                                                    UserId = id,
+                                                    UserName = userName
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    return new UnauthorizedObjectResult(new
+                                    {
+                                        Result = "Failed",
+                                        Message = "認証失敗（IDまたはパスワードが一致しません）"
+                                    });
+                                }
+                            }
+                            else
+                            {
+                                return new UnauthorizedObjectResult("認証失敗（ユーザーIDが存在しません）");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "ログイン認証中にエラーが発生しました。");
+                return new ObjectResult("LOGIN内部エラーが発生しました。") { StatusCode = 500 };
+            }
+        }
+    }
+}
+
+
+
+
+

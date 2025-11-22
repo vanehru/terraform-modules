@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+  <meta charset="utf-8">
+  <title></title>
+  <!-- CDN読み込み -->
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@2.6.15/dist/vuetify.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@2.6.15/dist/vuetify.js"></script>
+</head>
+<body>
+  <div id="app">
+    <v-app>
+      <v-container>
+        <!-- タイトル -->
+      </v-container>
+    </v-app>
+  </div>
+
+  <script>
+    new Vue({
+      el: '#app',
+      vuetify: new Vuetify(),
+      data: {
+        userid: '',
+        password: '',
+        errorMessage: '',
+        dialog: false
+      },
+      methods: {
+        // ログイン処理（セッション処理なし）
+        login: async function () {
+          if (!this.userid || !this.password) {
+            this.errorMessage = "ユーザーIDとパスワードを入力してください。";
+            this.dialog = true;
+            return;
+          }
+
+          try {
+            const response = await axios.post('※ここにLOGONAPIのURLを記載※', {
+              ID: this.userid,
+              Password: this.password
+            });
+
+            console.log("レスポンス:", response.data);
+
+            if (response.status === 200 && response.data?.result === "Succeeded") {
+              // ログインに成功した場合はhome.htmlに画面遷移
+              window.location.href = "home.html";
+            } else {
+              this.errorMessage = response.data?.Message || "ログインに失敗しました。";
+              this.dialog = true;
+            }
+          } catch (err) {
+            console.error("ログインエラー:", err);
+            this.errorMessage = "ログインエラー：" + (err.response?.data || err.message);
+            this.dialog = true;
+          }
+        },
+        // サインアップページへ遷移
+        goToSignup() {
+          window.location.href = "signup.html";
+        }
+      }
+    });
+  </script>
+</body>
+</html>
