@@ -1,3 +1,8 @@
+# Get current public IP address for Key Vault access during deployment
+data "http" "current_ip" {
+  url = "https://api.ipify.org?format=text"
+}
+
 resource "azurerm_resource_group" "rg" {
   name     = var.azurerm_resource_group_name
   location = var.azurerm_resource_group_location
@@ -166,6 +171,7 @@ module "key_vault" {
   network_acls_default_action = "Deny"
   network_acls_bypass         = "AzureServices"
   allowed_subnet_ids          = [azurerm_subnet.app_subnet.id, azurerm_subnet.keyvault_subnet.id]
+  allowed_ip_addresses        = [data.http.current_ip.response_body]
 
   access_policies = [
     # Function App access policy removed due to quota limitations

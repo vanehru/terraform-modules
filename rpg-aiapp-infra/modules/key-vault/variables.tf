@@ -48,6 +48,12 @@ variable "allowed_subnet_ids" {
   default     = []
 }
 
+variable "allowed_ip_addresses" {
+  description = "List of IP addresses allowed to access Key Vault"
+  type        = list(string)
+  default     = []
+}
+
 variable "access_policies" {
   description = "List of access policies for the Key Vault"
   type = list(object({

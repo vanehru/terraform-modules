@@ -11,6 +11,7 @@ resource "azurerm_key_vault" "kv" {
     default_action             = var.network_acls_default_action
     bypass                     = var.network_acls_bypass
     virtual_network_subnet_ids = var.allowed_subnet_ids
+    ip_rules                   = var.allowed_ip_addresses
   }
 
   dynamic "access_policy" {
