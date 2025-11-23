@@ -1,1 +1,0 @@
-{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"key_vault","Source":"./modules/key-vault","Dir":"modules/key-vault"},{"Key":"openai","Source":"./modules/openai","Dir":"modules/openai"},{"Key":"sql_database","Source":"./modules/sql-database","Dir":"modules/sql-database"},{"Key":"static_web_app","Source":"./modules/static-web-app","Dir":"modules/static-web-app"}]}

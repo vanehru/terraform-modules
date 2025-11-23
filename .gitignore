@@ -1,17 +1,27 @@
-# Ignore terraform local state and sensitive files
+# Terraform
+**/.terraform/*
 *.tfstate
 *.tfstate.*
+crash.log
+crash.*.log
 *.tfvars
-# keep example tfvars in repo, but ignore real ones
-!*.tfvars.example
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
 
-# SSH keys and certs
-id_rsa
-id_rsa.pub
-*.pem
-*.key
-*.p12
+# Terraform provider cache
+.terraform.lock.hcl
 
-# OS files
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-node_modules/
+Thumbs.db
