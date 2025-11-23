@@ -1,0 +1,65 @@
+# Test Configuration Template
+# Copy this file to test-config.yml and fill in your values
+# DO NOT commit test-config.yml to git!
+
+azure:
+  subscription_id: "your-subscription-id"
+  tenant_id: "your-tenant-id"
+  # For service principal authentication (optional)
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+
+test:
+  # Default Azure region for tests
+  default_region: "Japan East"
+  
+  # Resource name prefix for test resources
+  resource_prefix: "test"
+  
+  # Timeout settings (in minutes)
+  timeouts:
+    module_test: 30
+    integration_test: 60
+    full_test: 120
+  
+  # Cleanup settings
+  cleanup:
+    auto_destroy: true
+    force_cleanup: false
+    cleanup_on_failure: true
+
+  # Parallel execution
+  parallel:
+    enabled: true
+    max_workers: 4
+
+  # Cost management
+  cost:
+    # Maximum expected cost per test run (in USD)
+    max_expected_cost: 10
+    # Alert if cost exceeds threshold
+    alert_threshold: 15
+
+# Test-specific configurations
+infrastructure:
+  # VNet configuration
+  vnet_address_space: ["172.16.0.0/16"]
+  
+  # SKU settings for cost optimization in tests
+  function_app_sku: "P1v2"
+  sql_sku: "Basic"
+  openai_sku: "S0"
+  key_vault_sku: "standard"
+  
+  # Feature flags
+  enable_private_endpoints: true
+  enable_vnet_integration: true
+  enable_managed_identity: true
+
+# Notification settings (optional)
+notifications:
+  enabled: false
+  email: "your-email@example.com"
+  slack_webhook: "your-slack-webhook-url"
+  notify_on_failure: true
+  notify_on_success: false
