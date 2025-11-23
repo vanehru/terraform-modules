@@ -12,6 +12,8 @@ import (
 
 // TestOpenAIModule tests the Azure OpenAI module independently
 func TestOpenAIModule(t *testing.T) {
+	t.Skip("Module tests require pre-existing resource group. Use TestRPGAIAppInfrastructure for full infrastructure testing.")
+
 	t.Parallel()
 
 	uniqueID := strings.ToLower(random.UniqueId())

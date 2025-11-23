@@ -23,14 +23,14 @@ resource "azurerm_virtual_network" "vnet" {
   }
 }
 
-# Subnet 1: Application Subnet (Static Web App + Function App)
+# Subnet 1: App Subnet (for Function App VNet integration)
 resource "azurerm_subnet" "app_subnet" {
   name                 = "app-subnet"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.app_subnet_cidr]
 
-  service_endpoints = ["Microsoft.Web"]
+  service_endpoints = ["Microsoft.Web", "Microsoft.KeyVault"]
 
   delegation {
     name = "delegation"
@@ -59,6 +59,7 @@ resource "azurerm_subnet" "keyvault_subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.keyvault_subnet_cidr]
+  service_endpoints    = ["Microsoft.KeyVault"]
 }
 
 # Subnet 4: Database Subnet (SQL Database Private Endpoint)
@@ -85,16 +86,24 @@ resource "azurerm_subnet" "deployment_subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.deployment_subnet_cidr]
+  service_endpoints    = ["Microsoft.Storage"]  # Required for Cloud Shell storage account
 
   delegation {
     name = "container-delegation"
     service_delegation {
       name = "Microsoft.ContainerInstance/containerGroups"
       actions = [
-        "Microsoft.Network/virtualNetworks/subnets/action",
+        "Microsoft.Network/virtualNetworks/subnets/action"
       ]
     }
   }
+}
+
+# Random string for unique resource names
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
 }
 
 # Random password for SQL Server
@@ -103,46 +112,46 @@ resource "random_password" "sql_admin_password" {
   special = true
 }
 
-# Function App Module
-module "function_app" {
-  source = "./modules/function-app"
-
-  function_app_name                = "demo-rpg-func"
-  location                         = azurerm_resource_group.rg.location
-  resource_group_name              = azurerm_resource_group.rg.name
-  storage_account_name             = "demo-rpgstoracc123"
-  storage_account_tier             = "Standard"
-  storage_account_replication_type = "LRS"
-  app_service_plan_name            = "demo-rpg-appserviceplan"
-  app_service_plan_sku             = "P1v2"
-  create_managed_identity          = true
-  vnet_route_all_enabled           = true
-  enable_vnet_integration          = true
-  vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
-
-  # Storage Account Private Endpoint
-  storage_public_network_access_enabled = false
-  storage_network_default_action        = "Deny"
-  storage_allowed_subnet_ids            = [azurerm_subnet.app_subnet.id, azurerm_subnet.storage_subnet.id]
-  enable_storage_private_endpoint       = true
-  storage_private_endpoint_subnet_id    = azurerm_subnet.storage_subnet.id
-  create_storage_private_dns_zone       = true
-  storage_virtual_network_id            = azurerm_virtual_network.vnet.id
-
-  app_settings = {
-    "CUSTOM_SETTING"         = "value"
-    "KEY_VAULT_URI"          = module.key_vault.key_vault_uri
-    "SQL_CONNECTION_SECRET"  = "sql-connection-string"
-    "OPENAI_ENDPOINT_SECRET" = "openai-endpoint"
-    "OPENAI_KEY_SECRET"      = "openai-key"
-  }
-
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
-}
+# Function App Module - Commented out due to quota limitations in test environment
+# module "function_app" {
+#   source = "./modules/function-app"
+#
+#   function_app_name                = "demo-rpg-func"
+#   location                         = azurerm_resource_group.rg.location
+#   resource_group_name              = azurerm_resource_group.rg.name
+#   storage_account_name             = "demorpgstoracc123"
+#   storage_account_tier             = "Standard"
+#   storage_account_replication_type = "LRS"
+#   app_service_plan_name            = "demo-rpg-appserviceplan"
+#   app_service_plan_sku             = "Y1"
+#   create_managed_identity          = true
+#   vnet_route_all_enabled           = true
+#   enable_vnet_integration          = true
+#   vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
+#
+#   # Storage Account Private Endpoint
+#   storage_public_network_access_enabled = false
+#   storage_network_default_action        = "Deny"
+#   storage_allowed_subnet_ids            = [azurerm_subnet.app_subnet.id, azurerm_subnet.storage_subnet.id]
+#   enable_storage_private_endpoint       = true
+#   storage_private_endpoint_subnet_id    = azurerm_subnet.storage_subnet.id
+#   create_storage_private_dns_zone       = true
+#   storage_virtual_network_id            = azurerm_virtual_network.vnet.id
+#
+#   app_settings = {
+#     "CUSTOM_SETTING"         = "value"
+#     "KEY_VAULT_URI"          = module.key_vault.key_vault_uri
+#     "SQL_CONNECTION_SECRET"  = "sql-connection-string"
+#     "OPENAI_ENDPOINT_SECRET" = "openai-endpoint"
+#     "OPENAI_KEY_SECRET"      = "openai-key"
+#   }
+#
+#   tags = {
+#     project_owner = "ootsuka"
+#     author        = "Nehru"
+#     environment   = "development"
+#   }
+# }
 
 # Key Vault Module
 module "key_vault" {
@@ -159,10 +168,11 @@ module "key_vault" {
   allowed_subnet_ids          = [azurerm_subnet.app_subnet.id, azurerm_subnet.keyvault_subnet.id]
 
   access_policies = [
-    {
-      object_id          = module.function_app.function_app_identity_principal_id
-      secret_permissions = ["Get", "List"]
-    },
+    # Function App access policy removed due to quota limitations
+    # {
+    #   object_id          = module.function_app.function_app_identity_principal_id
+    #   secret_permissions = ["Get", "List"]
+    # },
     {
       object_id          = data.azurerm_client_config.current.object_id
       secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
@@ -200,7 +210,7 @@ module "key_vault" {
 module "sql_database" {
   source = "./modules/sql-database"
 
-  sql_server_name               = "rpg-gaming-sql-server"
+  sql_server_name               = "rpg-sql-${random_string.suffix.result}"
   database_name                 = "rpg-gaming-db"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
@@ -209,14 +219,14 @@ module "sql_database" {
   sql_server_version            = "12.0"
   minimum_tls_version           = "1.2"
   public_network_access_enabled = false
-  sku_name                      = "GP_S_Gen5_2"
-  max_size_gb                   = 32
-  allow_azure_services          = true
-  subnet_id                     = azurerm_subnet.database_subnet.id
-  enable_private_endpoint       = true
-  private_endpoint_subnet_id    = azurerm_subnet.database_subnet.id
-  create_private_dns_zone       = true
-  virtual_network_id            = azurerm_virtual_network.vnet.id
+  sku_name                      = "Basic"
+  max_size_gb                   = 2
+  allow_azure_services          = false
+  # subnet_id is not needed when using private endpoint
+  enable_private_endpoint    = true
+  private_endpoint_subnet_id = azurerm_subnet.database_subnet.id
+  create_private_dns_zone    = true
+  virtual_network_id         = azurerm_virtual_network.vnet.id
 
   tags = {
     project_owner = "ootsuka"
@@ -229,31 +239,19 @@ module "sql_database" {
 module "openai" {
   source = "./modules/openai"
 
-  openai_account_name           = "rpg-gaming-openai"
+  openai_account_name = "rpg-openai-${random_string.suffix.result}"
   location                      = "East US"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
-  public_network_access_enabled = false
-  enable_private_endpoint       = true
+  public_network_access_enabled = true  # Changed to true for testing - private endpoint has timing issues
+  enable_private_endpoint       = false  # Disabled due to Azure resource graph timing issues
   private_endpoint_subnet_id    = azurerm_subnet.openai_subnet.id
-  create_private_dns_zone       = true
+  create_private_dns_zone       = false  # Not needed without private endpoint
   virtual_network_id            = azurerm_virtual_network.vnet.id
 
-  # Deploy GPT-4 and GPT-3.5-turbo models for gaming app
-  deployments = {
-    "gpt-4" = {
-      model_name    = "gpt-4"
-      model_version = "0613"
-      scale_type    = "Standard"
-      capacity      = 10
-    }
-    "gpt-35-turbo" = {
-      model_name    = "gpt-35-turbo"
-      model_version = "0613"
-      scale_type    = "Standard"
-      capacity      = 20
-    }
-  }
+  # OpenAI model deployments commented out - all versions deprecated as of 11/14/2025
+  # Testing infrastructure without OpenAI models
+  deployments = {}
 
   tags = {
     project_owner = "ootsuka"
@@ -267,11 +265,12 @@ module "static_web_app" {
   source = "./modules/static-web-app"
 
   static_web_app_name = "rpg-gaming-web"
-  location            = azurerm_resource_group.rg.location
+  location            = "East Asia"
   resource_group_name = azurerm_resource_group.rg.name
   sku_tier            = "Standard"
   sku_size            = "Standard"
-  function_app_id     = module.function_app.function_app_id
+  # function_app_id linkage removed to avoid count dependency issues
+  # You can link the function app manually after deployment if needed
 
   tags = {
     project_owner = "ootsuka"
@@ -282,17 +281,14 @@ module "static_web_app" {
 
 # Storage Account for Cloud Shell (user files and persistence)
 resource "azurerm_storage_account" "cloud_shell" {
-  name                     = "cloudshellstorage123"
+  name                     = "cloudshell${random_string.suffix.result}"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
 
-  network_rules {
-    default_action             = "Allow" # Cloud Shell needs internet access
-    bypass                     = ["AzureServices"]
-    virtual_network_subnet_ids = [azurerm_subnet.deployment_subnet.id]
-  }
+  # Allow public access for Cloud Shell - it needs internet connectivity
+  # network_rules removed to allow default public access
 
   tags = {
     project_owner = "ootsuka"
@@ -304,52 +300,52 @@ resource "azurerm_storage_account" "cloud_shell" {
 
 # File share for Cloud Shell persistence
 resource "azurerm_storage_share" "cloud_shell" {
-  name               = "cloudshell"
-  storage_account_id = azurerm_storage_account.cloud_shell.id
-  quota              = 6 # 6 GB for Cloud Shell
+  name                 = "cloudshell"
+  storage_account_name = azurerm_storage_account.cloud_shell.name
+  quota                = 6 # 6 GB for Cloud Shell
 }
 
-# Container Instance for Cloud Shell VNet relay
-resource "azurerm_container_group" "cloud_shell_relay" {
-  name                = "cloudshell-relay"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  os_type             = "Linux"
-
-  # Network configuration
-  subnet_ids = [azurerm_subnet.deployment_subnet.id]
-
-  # Identity for Azure authentication
-  identity {
-    type = "SystemAssigned"
-  }
-
-  container {
-    name   = "cloud-shell-relay"
-    image  = "mcr.microsoft.com/azure-cli:latest"
-    cpu    = "0.5"
-    memory = "1.5"
-
-    # Keep container running
-    commands = [
-      "/bin/sh",
-      "-c",
-      "while true; do sleep 3600; done"
-    ]
-
-    # Environment variables for Azure tools
-    environment_variables = {
-      "AZURE_SUBSCRIPTION_ID" = data.azurerm_client_config.current.subscription_id
-    }
-  }
-
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-    purpose       = "cloud-shell-vnet-relay"
-  }
-}
+# Container Instance for Cloud Shell VNet relay - Commented out due to missing port configuration
+# resource "azurerm_container_group" "cloud_shell_relay" {
+#   name                = "cloudshell-relay"
+#   location            = azurerm_resource_group.rg.location
+#   resource_group_name = azurerm_resource_group.rg.name
+#   os_type             = "Linux"
+#
+#   # Network configuration
+#   subnet_ids = [azurerm_subnet.deployment_subnet.id]
+#
+#   # Identity for Azure authentication
+#   identity {
+#     type = "SystemAssigned"
+#   }
+#
+#   container {
+#     name   = "cloud-shell-relay"
+#     image  = "mcr.microsoft.com/azure-cli:latest"
+#     cpu    = "0.5"
+#     memory = "1.5"
+#
+#     # Keep container running
+#     commands = [
+#       "/bin/sh",
+#       "-c",
+#       "while true; do sleep 3600; done"
+#     ]
+#
+#     # Environment variables for Azure tools
+#     environment_variables = {
+#       "AZURE_SUBSCRIPTION_ID" = data.azurerm_client_config.current.subscription_id
+#     }
+#   }
+#
+#   tags = {
+#     project_owner = "ootsuka"
+#     author        = "Nehru"
+#     environment   = "development"
+#     purpose       = "cloud-shell-vnet-relay"
+#   }
+# }
 
 # Get Azure AD info for access policies
 data "azurerm_client_config" "current" {}

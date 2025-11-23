@@ -79,7 +79,7 @@ resource "azurerm_private_dns_a_record" "kv_dns_a_record" {
 
 # Key Vault Secrets
 resource "azurerm_key_vault_secret" "secrets" {
-  for_each     = var.secrets
+  for_each     = nonsensitive(var.secrets)
   name         = each.key
   value        = each.value
   key_vault_id = azurerm_key_vault.kv.id

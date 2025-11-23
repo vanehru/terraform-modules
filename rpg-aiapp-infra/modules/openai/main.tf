@@ -35,9 +35,8 @@ resource "azurerm_cognitive_deployment" "deployment" {
     version = each.value.model_version
   }
 
-  sku {
-    name     = "Standard"
-    tier     = "Standard"
+  scale {
+    type     = "Standard"
     capacity = each.value.capacity
   }
 }
@@ -57,6 +56,9 @@ resource "azurerm_private_endpoint" "openai_endpoint" {
     is_manual_connection           = false
   }
 
+  # Ensure OpenAI account is fully created before private endpoint
+  depends_on = [azurerm_cognitive_account.openai]
+
   tags = var.tags
 }
 
@@ -67,6 +69,10 @@ resource "azurerm_private_dns_zone" "openai_dns" {
   resource_group_name = var.resource_group_name
 
   tags = var.tags
+
+  lifecycle {
+    create_before_destroy = false
+  }
 }
 
 # Link DNS zone to VNet
@@ -78,6 +84,12 @@ resource "azurerm_private_dns_zone_virtual_network_link" "openai_dns_link" {
   virtual_network_id    = var.virtual_network_id
 
   tags = var.tags
+
+  lifecycle {
+    create_before_destroy = false
+  }
+
+  depends_on = [azurerm_private_dns_zone.openai_dns]
 }
 
 # DNS A record for OpenAI's private endpoint

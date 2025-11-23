@@ -57,10 +57,11 @@ output "cloud_shell_file_share" {
   value       = azurerm_storage_share.cloud_shell.name
 }
 
-output "cloud_shell_container_ip" {
-  description = "Private IP of Cloud Shell relay container"
-  value       = azurerm_container_group.cloud_shell_relay.ip_address
-}
+# Cloud shell container output commented out - container resource disabled
+# output "cloud_shell_container_ip" {
+#   description = "Private IP of Cloud Shell relay container"
+#   value       = azurerm_container_group.cloud_shell_relay.ip_address
+# }
 
 output "deployment_instructions" {
   description = "How to use Cloud Shell for deployment"
@@ -71,17 +72,16 @@ output "deployment_instructions" {
          --relay-resource-group ${azurerm_resource_group.rg.name} \\
          --relay-vnet ${azurerm_virtual_network.vnet.name} \\
          --relay-subnet ${azurerm_subnet.deployment_subnet.name}
-    3. Deploy Function App:
-       func azure functionapp publish ${module.function_app.function_app_name}
-    4. Deploy Static Web App:
+    3. Deploy Static Web App:
        swa deploy --app-name ${module.static_web_app.static_web_app_name}
   EOT
 }
 
-output "function_app_name" {
-  description = "Name of the Function App"
-  value       = module.function_app.function_app_name
-}
+# Function App output commented out due to quota limitations
+# output "function_app_name" {
+#   description = "Name of the Function App"
+#   value       = module.function_app.function_app_name
+# }
 
 output "static_web_app_url" {
   description = "URL of the Static Web App"
