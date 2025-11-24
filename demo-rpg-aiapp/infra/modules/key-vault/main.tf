@@ -12,7 +12,7 @@ resource "azurerm_key_vault" "kv" {
   enabled_for_disk_encryption     = true
   enabled_for_deployment          = false
   enabled_for_template_deployment = false
-  rbac_authorization_enabled      = false
+  enable_rbac_authorization       = false
 
   network_acls {
     default_action             = var.network_acls_default_action
