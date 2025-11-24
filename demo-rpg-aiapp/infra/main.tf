@@ -295,9 +295,11 @@ resource "azurerm_linux_function_app" "function_app" {
     "FUNCTIONS_EXTENSION_VERSION" = "~4"
     # Key Vault URL for runtime helper
     "KEYVAULT_URL"                = module.key_vault.key_vault_uri
-    # Use Key Vault references for sensitive settings
-    "AZURE_OPENAI_ENDPOINT"       = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_ids["openai-endpoint"]})"
-    "AZURE_OPENAI_KEY"            = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_ids["openai-key"]})"
+    # Fallback if Key Vault access is restricted
+    "SQL_CONNECTION_STRING"       = module.sql_database.connection_string
+    # Provide OpenAI settings directly to avoid network restrictions
+    "AZURE_OPENAI_ENDPOINT"       = module.openai.openai_endpoint
+    "AZURE_OPENAI_KEY"            = module.openai.openai_primary_key
   }
 
   site_config {
