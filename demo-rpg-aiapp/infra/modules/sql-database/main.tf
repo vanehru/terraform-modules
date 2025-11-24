@@ -50,15 +50,14 @@ resource "azurerm_mssql_firewall_rule" "custom_rules" {
   end_ip_address   = each.value.end_ip
 }
 
-# Virtual Network Rule (if subnet provided)
-resource "azurerm_mssql_virtual_network_rule" "vnet_rule" {
-  count     = var.subnet_id != null && var.subnet_id != "" ? 1 : 0
-  name      = "${var.sql_server_name}-vnet-rule"
-  server_id = azurerm_mssql_server.sql_server.id
-  subnet_id = var.subnet_id
-  
-  depends_on = [azurerm_mssql_server.sql_server]
-}
+# Virtual Network Rule (optional - will be created if subnet_id is provided in variables)
+# Note: This resource is commented out to avoid count dependency issues with computed values
+# Enable this after initial infrastructure creation, or create manually via Azure Portal/CLI
+# resource "azurerm_mssql_virtual_network_rule" "vnet_rule" {
+#   name      = "${var.sql_server_name}-vnet-rule"
+#   server_id = azurerm_mssql_server.sql_server.id
+#   subnet_id = var.subnet_id
+# }
 
 # Private Endpoint for SQL Server
 resource "azurerm_private_endpoint" "sql_endpoint" {
