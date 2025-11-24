@@ -17,6 +17,10 @@ resource "azurerm_resource_group" "rg" {
   location = var.azurerm_resource_group_location
 
   tags = local.common_tags
+  
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 # VNet and subnets with enhanced security
