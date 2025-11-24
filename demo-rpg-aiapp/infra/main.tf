@@ -177,20 +177,20 @@ module "function_app" {
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
   app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "B1"
+  app_service_plan_sku             = "Y1"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
   enable_vnet_integration          = true
   vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
 
-  # Storage Account Private Endpoint
-  storage_public_network_access_enabled = false
-  storage_network_default_action        = "Deny"
-  storage_allowed_subnet_ids            = [azurerm_subnet.app_subnet.id, azurerm_subnet.storage_subnet.id]
-  enable_storage_private_endpoint       = true
-  storage_private_endpoint_subnet_id    = azurerm_subnet.storage_subnet.id
-  create_storage_private_dns_zone       = true
-  storage_virtual_network_id            = azurerm_virtual_network.vnet.id
+  # Storage Account - Public access for Function App (best practice)
+  storage_public_network_access_enabled = true
+  storage_network_default_action        = "Allow"
+  storage_allowed_subnet_ids            = []
+  enable_storage_private_endpoint       = false
+  storage_private_endpoint_subnet_id    = null
+  create_storage_private_dns_zone       = false
+  storage_virtual_network_id            = null
 
   app_settings = {
     "FUNCTIONS_WORKER_RUNTIME"     = "python"
@@ -303,7 +303,7 @@ module "openai" {
   deployments = {
     "gpt-4o" = {
       model_name    = "gpt-4o"
-      model_version = "2024-08-06"
+      model_version = "2024-11-20"
       scale_type    = "Standard"
       capacity      = 1
     }
@@ -349,11 +349,12 @@ resource "azurerm_storage_account" "cloud_shell" {
     }
   }
 
-  network_rules {
-    default_action             = "Allow" # Cloud Shell needs internet access
-    bypass                     = ["AzureServices"]
-    virtual_network_subnet_ids = [azurerm_subnet.deployment_subnet.id]
-  }
+
+  # Network rules removed for initial apply to avoid subnet Updating race
+  # Will add azurerm_storage_account_network_rules in subsequent apply
+
+  depends_on = [azurerm_subnet.deployment_subnet]
+
 
   tags = merge(local.common_tags, {
     purpose = "cloud-shell-storage"
