@@ -1,4 +1,4 @@
-azurerm_resource_group_location = "East US"
+azurerm_resource_group_location = "Japan East"
 azurerm_resource_group_name = "rg-rpgai-staging-001"
 environment = "staging"
 project_owner = "dev-team"

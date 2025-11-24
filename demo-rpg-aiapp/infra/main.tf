@@ -139,6 +139,8 @@ resource "azurerm_subnet" "deployment_subnet" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.deployment_subnet_cidr]
 
+  service_endpoints = ["Microsoft.Storage"]
+
   delegation {
     name = "container-delegation"
     service_delegation {
@@ -283,7 +285,7 @@ module "openai" {
   source = "./modules/openai"
 
   openai_account_name           = "${local.name_prefix}-openai"
-  location                      = "East US"
+  location                      = "Japan East"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
   public_network_access_enabled = false
@@ -366,6 +368,7 @@ resource "azurerm_container_group" "cloud_shell_relay" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   os_type             = "Linux"
+  ip_address_type     = "Private"
 
   # Network configuration
   subnet_ids = [azurerm_subnet.deployment_subnet.id]
