@@ -12,15 +12,19 @@ locals {
   name_prefix = "${var.environment}-rpg"
 }
 
+# Try to get existing resource group, create if not exists
+data "azurerm_resource_group" "existing" {
+  name = var.azurerm_resource_group_name
+  
+  # This will fail if RG doesn't exist, which is fine
+  count = 0  # Disable for now
+}
+
 resource "azurerm_resource_group" "rg" {
   name     = var.azurerm_resource_group_name
   location = var.azurerm_resource_group_location
 
   tags = local.common_tags
-  
-  lifecycle {
-    ignore_changes = [tags]
-  }
 }
 
 # VNet and subnets with enhanced security
