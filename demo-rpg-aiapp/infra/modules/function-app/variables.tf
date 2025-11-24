@@ -89,6 +89,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "function_app_allowed_origins" {
+  description = "CORS allowed origins for the Function App. Leave empty to omit the CORS block entirely."
+  type        = list(string)
+  default     = []
+}
+
 variable "storage_public_network_access_enabled" {
   description = "Enable public network access to storage account"
   type        = bool

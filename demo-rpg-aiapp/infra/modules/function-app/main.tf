@@ -143,9 +143,13 @@ resource "azurerm_linux_function_app" "function" {
       python_version = "3.11"
     }
     
-    cors {
-      allowed_origins = []
-      support_credentials = false
+    # Render CORS configuration only if at least one allowed origin is supplied.
+    dynamic "cors" {
+      for_each = length(var.function_app_allowed_origins) > 0 ? [1] : []
+      content {
+        allowed_origins     = var.function_app_allowed_origins
+        support_credentials = false
+      }
     }
   }
 
