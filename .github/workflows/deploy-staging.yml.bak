@@ -1,0 +1,52 @@
+name: Deploy Staging Environment
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Validate Azure Service Principal Secrets
+      shell: bash
+      run: |
+        missing=0
+        for s in ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_SUBSCRIPTION_ID ARM_TENANT_ID; do
+          v="${{ secrets[format('{0}', s)] }}" # placeholder; matrix expansion not allowed; explicit checks below
+        done
+        if [ -z "${{ secrets.ARM_CLIENT_ID }}" ]; then echo "::error title=Missing secret::ARM_CLIENT_ID is not set"; missing=1; fi
+        if [ -z "${{ secrets.ARM_CLIENT_SECRET }}" ]; then echo "::error title=Missing secret::ARM_CLIENT_SECRET is not set"; missing=1; fi
+        if [ -z "${{ secrets.ARM_SUBSCRIPTION_ID }}" ]; then echo "::error title=Missing secret::ARM_SUBSCRIPTION_ID is not set"; missing=1; fi
+        if [ -z "${{ secrets.ARM_TENANT_ID }}" ]; then echo "::error title=Missing secret::ARM_TENANT_ID is not set"; missing=1; fi
+        if [ $missing -eq 1 ]; then echo "One or more required Azure secrets are missing. Failing early."; exit 1; fi
+        echo "All required Azure SP secrets present. Proceeding to azure/login."
+
+    - name: Azure Login (Service Principal)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.ARM_CLIENT_ID }}
+        tenant-id: ${{ secrets.ARM_TENANT_ID }}
+        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+    
+    - name: Deploy Infrastructure
+      working-directory: demo-rpg-aiapp/infra
+      run: |
+        terraform init
+        terraform apply -var-file="environments/staging.tfvars" -auto-approve
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
