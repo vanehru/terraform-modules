@@ -15,7 +15,34 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 30000, // 30 second timeout
+  withCredentials: false, // Prevent CSRF
 });
+
+// Request interceptor for security headers
+apiClient.interceptors.request.use(
+  (config) => {
+    // Add security headers
+    config.headers['X-Requested-With'] = 'XMLHttpRequest';
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
+apiClient.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // Log security-related errors
+    if (error.response?.status === 401) {
+      console.warn('Unauthorized access attempt');
+    }
+    return Promise.reject(error);
+  }
+);
 
 /**
  * API endpoints
@@ -96,11 +123,23 @@ export default {
   },
 
   /**
-   * Call OpenAI API
+   * Call OpenAI API with input validation
    */
   callOpenAI(message) {
+    // Input validation
+    if (!message || typeof message !== 'string') {
+      return Promise.reject(new Error('Message must be a non-empty string'));
+    }
+    
+    if (message.length > 1000) {
+      return Promise.reject(new Error('Message too long. Maximum 1000 characters allowed.'));
+    }
+    
+    // Sanitize message (basic XSS prevention)
+    const sanitizedMessage = message.replace(/<script[^>]*>.*?<\/script>/gi, '');
+    
     return apiClient.post(API_ENDPOINTS.OPENAI, {
-      message: message,
+      message: sanitizedMessage,
     });
   },
 };

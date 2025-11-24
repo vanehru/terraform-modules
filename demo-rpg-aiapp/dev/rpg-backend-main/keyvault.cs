@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Azure.Identity;　// Azure AD認証用ライブラリ
+using Azure.Identity; // Azure AD認証用ライブラリ
 using Azure.Security.KeyVault.Secrets; // Key Vaultシークレット取得用ライブラリ
+using Microsoft.Extensions.Logging;
 
 namespace AzureOpenAISample
 {
@@ -9,7 +10,7 @@ namespace AzureOpenAISample
     public static class KeyVault
     {
         // Key Vaultから接続文字列を取得する関数
-        public static async Task<string> GetSqlConnectionStringAsync()
+        public static async Task<string> GetSqlConnectionStringAsync(ILogger logger = null)
         {
             try
             {
@@ -33,14 +34,17 @@ namespace AzureOpenAISample
             }
             catch (UriFormatException ex)
             {
+                logger?.LogError(ex, "Invalid Key Vault URL format");
                 throw new InvalidOperationException("Key Vault URLの形式が無効です。", ex);
             }
             catch (Azure.RequestFailedException ex)
             {
+                logger?.LogError(ex, "Failed to access Key Vault");
                 throw new InvalidOperationException($"Key Vaultへのアクセスに失敗しました: {ex.Message}", ex);
             }
             catch (Exception ex)
             {
+                logger?.LogError(ex, "Unexpected error occurred");
                 throw new InvalidOperationException($"予期しないエラーが発生しました: {ex.Message}", ex);
             }
         }

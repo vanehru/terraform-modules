@@ -59,7 +59,7 @@ def validate_parameter_value(value: Any, param_name: str) -> Optional[str]:
     return None
 
 
-@app.route(route="OpenAI", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="OpenAI", methods=["GET", "POST"], auth_level=func.AuthLevel.FUNCTION)
 def openai_function(req: func.HttpRequest) -> func.HttpResponse:
     """MBTI personality scoring using Azure OpenAI GPT-4."""
     logging.info("OpenAI function processed a request.")
@@ -80,7 +80,7 @@ def openai_function(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    # Get user message from query or body
+    # Get user message from query or body with input validation
     user_message = req.params.get("message")
     if not user_message:
         try:
@@ -88,6 +88,13 @@ def openai_function(req: func.HttpRequest) -> func.HttpResponse:
             user_message = req_body.get("message", "")
         except ValueError:
             user_message = ""
+    
+    # Input validation and sanitization
+    if user_message and len(user_message) > 1000:
+        return func.HttpResponse(
+            "Message too long. Maximum 1000 characters allowed.",
+            status_code=400
+        )
     
     if not user_message:
         return func.HttpResponse(
@@ -390,10 +397,17 @@ def insert_user(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    # Validate password length
+    # Validate password strength
     if len(password) < 8:
         return func.HttpResponse(
             "Password は8文字以上である必要があります。",
+            status_code=400
+        )
+    
+    # Additional password validation
+    if len(password) > 128:
+        return func.HttpResponse(
+            "Password は128文字以下である必要があります。",
             status_code=400
         )
     
