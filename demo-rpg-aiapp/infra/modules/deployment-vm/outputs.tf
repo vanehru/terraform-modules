@@ -20,7 +20,9 @@ output "vm_public_ip" {
 
 output "vm_identity_principal_id" {
   description = "Principal ID of the VM's system-assigned identity"
-  value       = var.os_type == "Linux" ? azurerm_linux_virtual_machine.vm[0].identity[0].principal_id : azurerm_windows_virtual_machine.vm[0].identity[0].principal_id
+  value       = var.os_type == "Linux" ?
+    azurerm_linux_virtual_machine.vm[0].identity[0].principal_id :
+    azurerm_windows_virtual_machine.vm[0].identity[0].principal_id
 }
 
 output "bastion_host_dns" {
