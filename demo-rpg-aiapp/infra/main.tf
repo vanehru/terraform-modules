@@ -177,7 +177,7 @@ module "function_app" {
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
   app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "Y1"
+  app_service_plan_sku             = "B1"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
   enable_vnet_integration          = true
