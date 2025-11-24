@@ -65,8 +65,9 @@ jobs:
       - name: Terraform Plan
         working-directory: ./infra
         run: |
+          ENV="${{ inputs.environment || 'dev' }}"
           terraform plan \
-            -var-file="environments/${{ github.event.inputs.environment || 'dev' }}.tfvars" \
+            -var-file="environments/${ENV}.tfvars" \
             -out=tfplan
 
       - name: Upload Plan
@@ -116,12 +117,14 @@ jobs:
         working-directory: ./infra
         run: |
           terraform output -json > terraform-outputs.json
-          echo "KEYVAULT_URL=$(terraform output -raw keyvault_url)" >> $GITHUB_ENV
-          echo "FUNCTION_APP_NAME=$(terraform output -raw function_app_name)" >> $GITHUB_ENV
-          echo "FUNCTION_APP_URL=$(terraform output -raw function_app_url)" >> $GITHUB_ENV
-          echo "RESOURCE_GROUP=$(terraform output -raw resource_group_name)" >> $GITHUB_ENV
-          echo "OPENAI_ENDPOINT=$(terraform output -raw openai_endpoint)" >> $GITHUB_ENV
-          echo "STATIC_WEB_APP_URL=$(terraform output -raw static_web_app_url)" >> $GITHUB_ENV
+          {
+            echo "KEYVAULT_URL=$(terraform output -raw keyvault_url)"
+            echo "FUNCTION_APP_NAME=$(terraform output -raw function_app_name)"
+            echo "FUNCTION_APP_URL=$(terraform output -raw function_app_url)"
+            echo "RESOURCE_GROUP=$(terraform output -raw resource_group_name)"
+            echo "OPENAI_ENDPOINT=$(terraform output -raw openai_endpoint)"
+            echo "STATIC_WEB_APP_URL=$(terraform output -raw static_web_app_url)"
+          } >> "$GITHUB_ENV"
 
       - name: Upload Terraform Outputs
         uses: actions/upload-artifact@v3
@@ -131,14 +134,19 @@ jobs:
           retention-days: 30
 
       - name: Configure Function App Settings
+        env:
+          FUNCTION_APP_NAME: ${{ env.FUNCTION_APP_NAME }}
+          RESOURCE_GROUP: ${{ env.RESOURCE_GROUP }}
+          KEYVAULT_URL: ${{ env.KEYVAULT_URL }}
+          OPENAI_ENDPOINT: ${{ env.OPENAI_ENDPOINT }}
         run: |
           az functionapp config appsettings set \
-            --name ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name "${FUNCTION_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
             --settings \
-              KEYVAULT_URL="${{ env.KEYVAULT_URL }}" \
-              AZURE_OPENAI_ENDPOINT="${{ env.OPENAI_ENDPOINT }}" \
-              AZURE_OPENAI_KEY="@Microsoft.KeyVault(SecretUri=${{ env.KEYVAULT_URL }}secrets/openai-key/)" \
+              KEYVAULT_URL="${KEYVAULT_URL}" \
+              AZURE_OPENAI_ENDPOINT="${OPENAI_ENDPOINT}" \
+              AZURE_OPENAI_KEY="@Microsoft.KeyVault(SecretUri=${KEYVAULT_URL}secrets/openai-key/)" \
               AZURE_OPENAI_DEPLOYMENT="gpt-4o"
 
       - name: Trigger Application Deployment
