@@ -1,0 +1,66 @@
+name: Deploy Function App (Python)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        options: [dev, staging, prod]
+        default: dev
+  workflow_run:
+    workflows: ["Deploy Infra (Terraform)"]
+    types: [completed]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  APP_CODE_PATH: demo-rpg-aiapp/dev/rpg-backend-python
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    name: Publish Azure Function App
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: env
+        shell: bash
+        run: |
+          if [[ -n "${{ github.event.inputs.environment }}" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            # Derive branch from workflow_run payload if present, else current ref
+            BRANCH="${{ github.ref_name }}"
+            if [[ -n "${{ github.event.workflow_run.head_branch }}" ]]; then BRANCH="${{ github.event.workflow_run.head_branch }}"; fi
+            case "$BRANCH" in
+              main) ENV=prod ;;
+              staging) ENV=staging ;;
+              *) ENV=dev ;;
+            esac
+          fi
+          echo "env_name=$ENV" >> $GITHUB_OUTPUT
+          # Function app name pattern matches Terraform: "${env}-rpg-func"
+          APP_NAME="${ENV}-rpg-func"
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "Using environment: $ENV; app: $APP_NAME"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Function App (Python)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.env.outputs.app_name }}
+          package: ${{ env.APP_CODE_PATH }}

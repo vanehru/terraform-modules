@@ -293,6 +293,11 @@ resource "azurerm_linux_function_app" "function_app" {
   app_settings = {
     "FUNCTIONS_WORKER_RUNTIME"    = "python"
     "FUNCTIONS_EXTENSION_VERSION" = "~4"
+    # Key Vault URL for runtime helper
+    "KEYVAULT_URL"                = module.key_vault.key_vault_uri
+    # Use Key Vault references for sensitive settings
+    "AZURE_OPENAI_ENDPOINT"       = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_ids["openai-endpoint"]})"
+    "AZURE_OPENAI_KEY"            = "@Microsoft.KeyVault(SecretUri=${module.key_vault.secret_ids["openai-key"]})"
   }
 
   site_config {
@@ -301,7 +306,23 @@ resource "azurerm_linux_function_app" "function_app" {
     }
   }
 
+  identity {
+    type = "SystemAssigned"
+  }
+
   tags = local.common_tags
+}
+
+# Grant Function App's managed identity access to Key Vault secrets
+resource "azurerm_key_vault_access_policy" "function_kv_policy" {
+  key_vault_id = module.key_vault.key_vault_id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_linux_function_app.function_app.identity[0].principal_id
+
+  secret_permissions = [
+    "Get",
+    "List"
+  ]
 }
 
 # Static Web App Module

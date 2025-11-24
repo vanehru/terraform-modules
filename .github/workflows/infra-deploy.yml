@@ -1,0 +1,79 @@
+name: Deploy Infra (Terraform)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        options: [dev, staging, prod]
+        default: dev
+  push:
+    branches: [ dev, main, staging ]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: true
+  WORKING_DIR: demo-rpg-aiapp/infra
+
+jobs:
+  terraform:
+    name: Provision Infra
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: env
+        shell: bash
+        run: |
+          if [[ -n "${{ github.event.inputs.environment }}" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            case "${{ github.ref_name }}" in
+              main) ENV=prod ;;
+              staging) ENV=staging ;;
+              *) ENV=dev ;;
+            esac
+          fi
+          echo "env_name=$ENV" >> $GITHUB_OUTPUT
+          echo "Using environment: $ENV"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform plan -input=false \
+            -var-file="environments/${{ steps.env.outputs.env_name }}.tfvars" \
+            -out=tfplan
+
+      - name: Terraform Apply (auto-approve)
+        if: success()
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -input=false -auto-approve tfplan

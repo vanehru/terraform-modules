@@ -101,3 +101,14 @@ output "openai_account_name" {
   description = "Name of the OpenAI account"
   value       = module.openai.openai_account_name
 }
+
+# Function App outputs
+output "function_app_name" {
+  description = "Name of the Function App"
+  value       = azurerm_linux_function_app.function_app.name
+}
+
+output "key_vault_uri" {
+  description = "Key Vault URI for app settings and runtime"
+  value       = module.key_vault.key_vault_uri
+}
