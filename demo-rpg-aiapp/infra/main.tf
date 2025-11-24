@@ -12,14 +12,6 @@ locals {
   name_prefix = "${var.environment}-rpg"
 }
 
-# Try to get existing resource group, create if not exists
-data "azurerm_resource_group" "existing" {
-  name = var.azurerm_resource_group_name
-  
-  # This will fail if RG doesn't exist, which is fine
-  count = 0  # Disable for now
-}
-
 resource "azurerm_resource_group" "rg" {
   name     = var.azurerm_resource_group_name
   location = var.azurerm_resource_group_location
@@ -112,6 +104,8 @@ resource "azurerm_subnet" "keyvault_subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.keyvault_subnet_cidr]
+
+  service_endpoints = ["Microsoft.KeyVault"]
 }
 
 # Subnet 4: Database Subnet (SQL Database Private Endpoint)
@@ -166,52 +160,6 @@ resource "random_password" "sql_admin_password" {
   }
 }
 
-# Function App Module
-module "function_app" {
-  source = "./modules/function-app"
-
-  function_app_name                = "${local.name_prefix}-func"
-  location                         = azurerm_resource_group.rg.location
-  resource_group_name              = azurerm_resource_group.rg.name
-  storage_account_name             = "${replace(local.name_prefix, "-", "")}funcstore"
-  storage_account_tier             = "Standard"
-  storage_account_replication_type = "LRS"
-  app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "Y1"
-  create_managed_identity          = true
-  vnet_route_all_enabled           = true
-  enable_vnet_integration          = true
-  vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
-
-  # Storage Account - Public access for Function App (best practice)
-  storage_public_network_access_enabled = true
-  storage_network_default_action        = "Allow"
-  storage_allowed_subnet_ids            = []
-  enable_storage_private_endpoint       = false
-  storage_private_endpoint_subnet_id    = null
-  create_storage_private_dns_zone       = false
-  storage_virtual_network_id            = null
-
-  app_settings = {
-    "FUNCTIONS_WORKER_RUNTIME"     = "python"
-    "FUNCTIONS_EXTENSION_VERSION"  = "~4"
-    "WEBSITE_PYTHON_DEFAULT_VERSION" = "3.11"
-    "KEY_VAULT_URI"                = module.key_vault.key_vault_uri
-    "SQL_CONNECTION_SECRET"        = "sql-connection-string"
-    "OPENAI_ENDPOINT_SECRET"       = "openai-endpoint"
-    "OPENAI_KEY_SECRET"            = "openai-key"
-    "WEBSITE_CONTENTOVERVNET"      = "1"
-    "WEBSITE_VNET_ROUTE_ALL"       = "1"
-  }
-
-  tags = local.common_tags
-
-  depends_on = [
-    azurerm_subnet.app_subnet,
-    azurerm_subnet.storage_subnet
-  ]
-}
-
 # Key Vault Module
 module "key_vault" {
   source = "./modules/key-vault"
@@ -227,10 +175,6 @@ module "key_vault" {
   allowed_subnet_ids          = [azurerm_subnet.app_subnet.id, azurerm_subnet.keyvault_subnet.id]
 
   access_policies = [
-    {
-      object_id          = module.function_app.function_app_identity_principal_id
-      secret_permissions = ["Get", "List"]
-    },
     {
       object_id          = data.azurerm_client_config.current.object_id
       secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
@@ -312,20 +256,66 @@ module "openai" {
   tags = local.common_tags
 }
 
+# App Service Plan for Function App
+resource "azurerm_service_plan" "function_plan" {
+  name                = "${local.name_prefix}-func-plan"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  os_type             = "Linux"
+  sku_name            = "Y1"
+
+  tags = local.common_tags
+}
+
+
+
+# Storage Account for Function App (Public Access)
+resource "azurerm_storage_account" "function_storage" {
+  name                     = "${replace(local.name_prefix, "-", "")}func123"
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  tags = local.common_tags
+}
+
+# Function App (Public Access)
+resource "azurerm_linux_function_app" "function_app" {
+  name                = "${local.name_prefix}-func"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+
+  storage_account_name       = azurerm_storage_account.function_storage.name
+  storage_account_access_key = azurerm_storage_account.function_storage.primary_access_key
+  service_plan_id            = azurerm_service_plan.function_plan.id
+
+  app_settings = {
+    "FUNCTIONS_WORKER_RUNTIME"    = "python"
+    "FUNCTIONS_EXTENSION_VERSION" = "~4"
+  }
+
+  site_config {
+    application_stack {
+      python_version = "3.11"
+    }
+  }
+
+  tags = local.common_tags
+}
+
 # Static Web App Module
 module "static_web_app" {
   source = "./modules/static-web-app"
 
   static_web_app_name = "${local.name_prefix}-web"
-  location            = azurerm_resource_group.rg.location
+  location            = "East Asia"
   resource_group_name = azurerm_resource_group.rg.name
   sku_tier            = "Free"
   sku_size            = "Free"
-  function_app_id     = null  # Disable function app linking for now
+  function_app_id     = null
 
   tags = local.common_tags
-  
-  depends_on = [module.function_app]
 }
 
 # Storage Account for Cloud Shell with enhanced security
@@ -349,12 +339,7 @@ resource "azurerm_storage_account" "cloud_shell" {
     }
   }
 
-
-  # Network rules removed for initial apply to avoid subnet Updating race
-  # Will add azurerm_storage_account_network_rules in subsequent apply
-
   depends_on = [azurerm_subnet.deployment_subnet]
-
 
   tags = merge(local.common_tags, {
     purpose = "cloud-shell-storage"
@@ -420,4 +405,3 @@ resource "azurerm_container_group" "cloud_shell_relay" {
 
 # Get Azure AD info for access policies
 data "azurerm_client_config" "current" {}
-

@@ -71,17 +71,16 @@ output "deployment_instructions" {
          --relay-resource-group ${azurerm_resource_group.rg.name} \\
          --relay-vnet ${azurerm_virtual_network.vnet.name} \\
          --relay-subnet ${azurerm_subnet.deployment_subnet.name}
-    3. Deploy Function App:
-       func azure functionapp publish ${module.function_app.function_app_name}
-    4. Deploy Static Web App:
+    3. Deploy Static Web App:
        swa deploy --app-name ${module.static_web_app.static_web_app_name}
   EOT
 }
 
-output "function_app_name" {
-  description = "Name of the Function App"
-  value       = module.function_app.function_app_name
-}
+# Function App disabled due to quota limits
+# output "function_app_name" {
+#   description = "Name of the Function App"
+#   value       = "disabled"
+# }
 
 output "static_web_app_url" {
   description = "URL of the Static Web App"

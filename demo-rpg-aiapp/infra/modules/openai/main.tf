@@ -6,6 +6,7 @@ resource "azurerm_cognitive_account" "openai" {
   kind                = "OpenAI"
   sku_name            = var.sku_name
 
+
   custom_subdomain_name         = var.custom_subdomain_name != null ? var.custom_subdomain_name : var.openai_account_name
   public_network_access_enabled = var.public_network_access_enabled
 
