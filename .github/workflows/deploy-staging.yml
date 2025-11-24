@@ -25,23 +25,41 @@ jobs:
             exit 1
           fi
           json='${{ secrets.AZURE_ACCOUNT_CRED }}'
-          for key in clientId clientSecret tenantId subscriptionId; do
-            val=$(echo "$json" | jq -r ."$key" 2>/dev/null || echo null)
-            if [ -z "$val" ] || [ "$val" = "null" ]; then
-              echo "::error title=Missing field::'$key' missing or null"
-              bad=1
-            fi
-          done
-          if [ "${bad:-0}" -ne 0 ]; then
-            echo "AZURE_ACCOUNT_CRED secret incomplete"
-            exit 1
-          fi
-          echo "AZURE_ACCOUNT_CRED secret validated."
+          cid=$(echo "$json" | jq -r '.clientId // .appId // empty')
+          csec=$(echo "$json" | jq -r '.clientSecret // .password // empty')
+          tid=$(echo "$json" | jq -r '.tenantId // .tenant // empty')
+          sid=$(echo "$json" | jq -r '.subscriptionId // empty')
+          missing(){ echo "::error title=Missing field::$1 missing or null"; fail=1; }
+          [ -n "$cid" ] || missing clientId/appId
+          [ -n "$csec" ] || missing clientSecret/password
+          [ -n "$tid" ] || missing tenantId/tenant
+          [ -n "$sid" ] || missing subscriptionId
+          if [ "${fail:-0}" = 1 ]; then
+            echo "AZURE_ACCOUNT_CRED secret incomplete"; exit 1; fi
+          echo "AZURE_ACCOUNT_CRED secret validated (clientId=$cid)."
 
-      - name: Azure Login (JSON secret)
+      - name: Extract Azure SP values
+        id: extract-sp
+        shell: bash
+        run: |
+          json='${{ secrets.AZURE_ACCOUNT_CRED }}'
+          cid=$(echo "$json" | jq -r '.clientId // .appId')
+          csec=$(echo "$json" | jq -r '.clientSecret // .password')
+          tid=$(echo "$json" | jq -r '.tenantId // .tenant')
+          sid=$(echo "$json" | jq -r '.subscriptionId')
+          echo "ARM_CLIENT_ID=$cid" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=$csec" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=$tid" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=$sid" >> $GITHUB_ENV
+          echo "clientId=$cid" >> $GITHUB_OUTPUT
+
+      - name: Azure Login (Service Principal explicit)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_ACCOUNT_CRED }}
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          client-secret: ${{ env.ARM_CLIENT_SECRET }}
 
       - name: Deploy Infrastructure
         working-directory: demo-rpg-aiapp/infra
