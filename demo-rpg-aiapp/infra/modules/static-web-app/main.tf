@@ -11,9 +11,11 @@ resource "azurerm_static_web_app" "swa" {
 
 # Link Static Web App with Function App
 resource "azurerm_static_web_app_function_app_registration" "swa_function_link" {
-  count               = var.function_app_id != null ? 1 : 0
+  count               = var.function_app_id != null && var.function_app_id != "" ? 1 : 0
   static_web_app_id   = azurerm_static_web_app.swa.id
   function_app_id     = var.function_app_id
+  
+  depends_on = [azurerm_static_web_app.swa]
 }
 
 # Custom Domain (optional)

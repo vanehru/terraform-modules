@@ -11,8 +11,18 @@ def hash_password(password: str) -> str:
         
     Returns:
         str: Hashed password
+        
+    Raises:
+        ValueError: If password is invalid
     """
-    return pbkdf2_sha256.hash(password)
+    if not password or not isinstance(password, str):
+        raise ValueError("Password must be a non-empty string")
+    
+    if len(password) > 128:
+        raise ValueError("Password too long")
+    
+    # Use secure PBKDF2 configuration
+    return pbkdf2_sha256.using(rounds=100000, salt_size=16).hash(password)
 
 
 def verify_password(password: str, hashed: str) -> bool:
@@ -25,5 +35,18 @@ def verify_password(password: str, hashed: str) -> bool:
         
     Returns:
         bool: True if password matches, False otherwise
+        
+    Raises:
+        ValueError: If inputs are invalid
     """
-    return pbkdf2_sha256.verify(password, hashed)
+    if not password or not isinstance(password, str):
+        raise ValueError("Password must be a non-empty string")
+    
+    if not hashed or not isinstance(hashed, str):
+        raise ValueError("Hash must be a non-empty string")
+    
+    try:
+        return pbkdf2_sha256.verify(password, hashed)
+    except Exception:
+        # Return False for any verification errors (timing attack protection)
+        return False

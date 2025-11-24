@@ -312,9 +312,11 @@ module "static_web_app" {
   resource_group_name = azurerm_resource_group.rg.name
   sku_tier            = "Standard"
   sku_size            = "Standard"
-  function_app_id     = module.function_app.function_app_id
+  function_app_id     = null  # Disable function app linking for now
 
   tags = local.common_tags
+  
+  depends_on = [module.function_app]
 }
 
 # Storage Account for Cloud Shell with enhanced security

@@ -13,14 +13,25 @@ def get_sql_connection_string():
         
     Raises:
         ValueError: If KEYVAULT_URL environment variable is not set
+        Exception: For Azure Key Vault access errors
     """
-    keyvault_url = os.environ.get("KEYVAULT_URL")
-    
-    if not keyvault_url:
-        raise ValueError("環境変数 'KEYVAULT_URL' が設定されていません。")
-    
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=keyvault_url, credential=credential)
-    
-    secret = client.get_secret("sqlconnectionString")
-    return secret.value
+    try:
+        keyvault_url = os.environ.get("KEYVAULT_URL")
+        
+        if not keyvault_url:
+            raise ValueError("環境変数 'KEYVAULT_URL' が設定されていません。")
+        
+        # Validate URL format
+        if not keyvault_url.startswith('https://'):
+            raise ValueError("Key Vault URL must use HTTPS")
+        
+        credential = DefaultAzureCredential()
+        client = SecretClient(vault_url=keyvault_url, credential=credential)
+        
+        secret = client.get_secret("sqlconnectionString")
+        return secret.value
+        
+    except ValueError:
+        raise
+    except Exception as e:
+        raise Exception(f"Key Vaultへのアクセスに失敗しました: {str(e)}") from e
