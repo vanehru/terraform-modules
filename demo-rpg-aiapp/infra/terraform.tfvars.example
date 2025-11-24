@@ -1,78 +1,29 @@
-# Example Terraform Variables Configuration
-# Copy this file to terraform.tfvars and customize as needed
+# Terraform Variables Configuration Example
+# Copy this file to terraform.tfvars and customize the values
 
 # Resource Group Configuration
 azurerm_resource_group_name     = "rpg-aiapp-rg"
 azurerm_resource_group_location = "Japan East"
 
-# Network Configuration
-# Using 172.16.0.0/16 range to avoid conflicts with 10.x.x.x networks
-# This is useful when:
-# - Connecting to on-premises networks that use 10.x.x.x
-# - Peering with other VNets that use 10.x.x.x
-# - Part of a hub-and-spoke architecture
+# Environment and Tagging
+environment   = "dev"
+project_owner = "ootsuka"
+author        = "Nehru"
 
+# Network Configuration
 vnet_address_space = ["172.16.0.0/16"]
 
-# Subnet CIDR Blocks (251 usable IPs per subnet)
-app_subnet_cidr        = "172.16.1.0/24"  # Application tier (Function App)
-storage_subnet_cidr    = "172.16.2.0/24"  # Storage Account private endpoint
-keyvault_subnet_cidr   = "172.16.3.0/24"  # Key Vault private endpoint
-database_subnet_cidr   = "172.16.4.0/24"  # SQL Database private endpoint
-openai_subnet_cidr     = "172.16.5.0/24"  # Azure OpenAI private endpoint
-deployment_subnet_cidr = "172.16.6.0/24"  # Cloud Shell Container Instance
+# Subnet CIDR Blocks
+app_subnet_cidr        = "172.16.1.0/24"
+storage_subnet_cidr    = "172.16.2.0/24"
+keyvault_subnet_cidr   = "172.16.3.0/24"
+database_subnet_cidr   = "172.16.4.0/24"
+openai_subnet_cidr     = "172.16.5.0/24"
+deployment_subnet_cidr = "172.16.6.0/24"
 
-# Alternative Network Configurations (commented out)
-# -------------------------------------------------------
-
-# Option 1: Use 10.x.x.x range (default for standalone deployments)
-# vnet_address_space     = ["10.0.0.0/16"]
-# app_subnet_cidr        = "10.0.1.0/24"
-# storage_subnet_cidr    = "10.0.2.0/24"
-# keyvault_subnet_cidr   = "10.0.3.0/24"
-# database_subnet_cidr   = "10.0.4.0/24"
-# openai_subnet_cidr     = "10.0.5.0/24"
-# deployment_subnet_cidr = "10.0.6.0/24"
-
-# Option 2: Use 192.168.x.x range (for smaller networks)
-# vnet_address_space     = ["192.168.0.0/16"]
-# app_subnet_cidr        = "192.168.1.0/24"
-# storage_subnet_cidr    = "192.168.2.0/24"
-# keyvault_subnet_cidr   = "192.168.3.0/24"
-# database_subnet_cidr   = "192.168.4.0/24"
-# openai_subnet_cidr     = "192.168.5.0/24"
-# deployment_subnet_cidr = "192.168.6.0/24"
-
-# Option 3: Hub-and-Spoke Architecture (Spoke VNet)
-# vnet_address_space     = ["10.10.0.0/16"]  # Spoke 1
-# app_subnet_cidr        = "10.10.1.0/24"
-# storage_subnet_cidr    = "10.10.2.0/24"
-# keyvault_subnet_cidr   = "10.10.3.0/24"
-# database_subnet_cidr   = "10.10.4.0/24"
-# openai_subnet_cidr     = "10.10.5.0/24"
-# deployment_subnet_cidr = "10.10.6.0/24"
-
-# Subnet Breakdown:
-# -----------------
-# /24 subnet = 256 total IPs
-#   - 5 reserved by Azure (network, gateway, DNS x2, broadcast)
-#   - 251 usable IPs
-#
-# /16 VNet = 65,536 total IPs
-#   - Enough for 256 /24 subnets
-#   - Room for future expansion
-
-# IP Address Planning Best Practices:
-# -----------------------------------
-# 1. Avoid overlapping with on-premises networks
-# 2. Leave room for future subnets (we use 6 out of 256 possible /24s)
-# 3. Document your IP allocation scheme
-# 4. Consider VNet peering requirements
-# 5. Use consistent patterns across environments (dev/test/prod)
-
-# Example Multi-Environment Setup:
-# --------------------------------
-# Development:  172.16.0.0/16
-# Testing:      172.17.0.0/16
-# Staging:      172.18.0.0/16
-# Production:   172.19.0.0/16
+# Security Notes:
+# - All services use private endpoints for enhanced security
+# - Network access is restricted to VNet subnets only
+# - TLS 1.2 minimum enforced across all services
+# - Managed identities used for authentication
+# - No public network access for backend services

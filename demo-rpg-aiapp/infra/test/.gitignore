@@ -1,0 +1,42 @@
+# Test configuration
+test-config.yml
+
+# Test results and logs
+test-results.log
+*.log
+
+# Go test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Terraform state files (tests should not commit state)
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Go vendor directory
+vendor/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/

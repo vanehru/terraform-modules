@@ -1,26 +1,65 @@
+# Local values for consistent tagging and naming
+locals {
+  common_tags = {
+    project_owner = var.project_owner
+    author        = var.author
+    environment   = var.environment
+    project       = "rpg-aiapp"
+    managed_by    = "terraform"
+    created_date  = formatdate("YYYY-MM-DD", timestamp())
+  }
+  
+  name_prefix = "${var.environment}-rpg"
+}
+
 resource "azurerm_resource_group" "rg" {
   name     = var.azurerm_resource_group_name
   location = var.azurerm_resource_group_location
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
-# VNet and subnets
+# VNet and subnets with enhanced security
 resource "azurerm_virtual_network" "vnet" {
-  name                = "demo-rpg-vnet"
+  name                = "${local.name_prefix}-vnet"
   address_space       = var.vnet_address_space
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
+  tags = local.common_tags
+}
+
+# Network Security Group for Application Subnet
+resource "azurerm_network_security_group" "app_nsg" {
+  name                = "${local.name_prefix}-app-nsg"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "AllowHTTPS"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
   }
+
+  security_rule {
+    name                       = "DenyAllInbound"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = local.common_tags
 }
 
 # Subnet 1: Application Subnet (Static Web App + Function App)
@@ -30,7 +69,7 @@ resource "azurerm_subnet" "app_subnet" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.app_subnet_cidr]
 
-  service_endpoints = ["Microsoft.Web"]
+  service_endpoints = ["Microsoft.Web", "Microsoft.KeyVault"]
 
   delegation {
     name = "delegation"
@@ -41,6 +80,12 @@ resource "azurerm_subnet" "app_subnet" {
       ]
     }
   }
+}
+
+# Associate NSG with App Subnet
+resource "azurerm_subnet_network_security_group_association" "app_nsg_association" {
+  subnet_id                 = azurerm_subnet.app_subnet.id
+  network_security_group_id = azurerm_network_security_group.app_nsg.id
 }
 
 # Subnet 2: Storage Subnet (Storage Account Private Endpoint)
@@ -97,23 +142,31 @@ resource "azurerm_subnet" "deployment_subnet" {
   }
 }
 
-# Random password for SQL Server
+# Random password for SQL Server with enhanced security
 resource "random_password" "sql_admin_password" {
-  length  = 16
-  special = true
+  length      = 32
+  special     = true
+  min_lower   = 2
+  min_upper   = 2
+  min_numeric = 2
+  min_special = 2
+  
+  lifecycle {
+    ignore_changes = [length, special, min_lower, min_upper, min_numeric, min_special]
+  }
 }
 
 # Function App Module
 module "function_app" {
   source = "./modules/function-app"
 
-  function_app_name                = "demo-rpg-func"
+  function_app_name                = "${local.name_prefix}-func"
   location                         = azurerm_resource_group.rg.location
   resource_group_name              = azurerm_resource_group.rg.name
-  storage_account_name             = "demo-rpgstoracc123"
+  storage_account_name             = "${replace(local.name_prefix, "-", "")}storacc123"
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
-  app_service_plan_name            = "demo-rpg-appserviceplan"
+  app_service_plan_name            = "${local.name_prefix}-appserviceplan"
   app_service_plan_sku             = "P1v2"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
@@ -130,25 +183,25 @@ module "function_app" {
   storage_virtual_network_id            = azurerm_virtual_network.vnet.id
 
   app_settings = {
-    "CUSTOM_SETTING"         = "value"
-    "KEY_VAULT_URI"          = module.key_vault.key_vault_uri
-    "SQL_CONNECTION_SECRET"  = "sql-connection-string"
-    "OPENAI_ENDPOINT_SECRET" = "openai-endpoint"
-    "OPENAI_KEY_SECRET"      = "openai-key"
+    "FUNCTIONS_WORKER_RUNTIME"     = "python"
+    "FUNCTIONS_EXTENSION_VERSION"  = "~4"
+    "WEBSITE_PYTHON_DEFAULT_VERSION" = "3.11"
+    "KEY_VAULT_URI"                = module.key_vault.key_vault_uri
+    "SQL_CONNECTION_SECRET"        = "sql-connection-string"
+    "OPENAI_ENDPOINT_SECRET"       = "openai-endpoint"
+    "OPENAI_KEY_SECRET"            = "openai-key"
+    "WEBSITE_CONTENTOVERVNET"      = "1"
+    "WEBSITE_VNET_ROUTE_ALL"       = "1"
   }
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
 # Key Vault Module
 module "key_vault" {
   source = "./modules/key-vault"
 
-  key_vault_name              = "demo-rpgkv123"
+  key_vault_name              = "${replace(local.name_prefix, "-", "")}kv123"
   location                    = azurerm_resource_group.rg.location
   resource_group_name         = azurerm_resource_group.rg.name
   tenant_id                   = data.azurerm_client_config.current.tenant_id
@@ -189,19 +242,15 @@ module "key_vault" {
   create_private_dns_zone    = true
   virtual_network_id         = azurerm_virtual_network.vnet.id
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
 # SQL Database Module
 module "sql_database" {
   source = "./modules/sql-database"
 
-  sql_server_name               = "rpg-gaming-sql-server"
-  database_name                 = "rpg-gaming-db"
+  sql_server_name               = "${local.name_prefix}-sql-server"
+  database_name                 = "${local.name_prefix}-db"
   location                      = azurerm_resource_group.rg.location
   resource_group_name           = azurerm_resource_group.rg.name
   admin_username                = "sqladmin"
@@ -218,18 +267,14 @@ module "sql_database" {
   create_private_dns_zone       = true
   virtual_network_id            = azurerm_virtual_network.vnet.id
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
 # OpenAI Module
 module "openai" {
   source = "./modules/openai"
 
-  openai_account_name           = "rpg-gaming-openai"
+  openai_account_name           = "${local.name_prefix}-openai"
   location                      = "East US"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
@@ -255,38 +300,43 @@ module "openai" {
     }
   }
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
 # Static Web App Module
 module "static_web_app" {
   source = "./modules/static-web-app"
 
-  static_web_app_name = "rpg-gaming-web"
+  static_web_app_name = "${local.name_prefix}-web"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   sku_tier            = "Standard"
   sku_size            = "Standard"
   function_app_id     = module.function_app.function_app_id
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-  }
+  tags = local.common_tags
 }
 
-# Storage Account for Cloud Shell (user files and persistence)
+# Storage Account for Cloud Shell with enhanced security
 resource "azurerm_storage_account" "cloud_shell" {
   name                     = "cloudshellstorage123"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+  
+  # Security configurations
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = true
+  https_traffic_only_enabled      = true
+  
+  blob_properties {
+    versioning_enabled = true
+    delete_retention_policy {
+      days = 7
+    }
+  }
 
   network_rules {
     default_action             = "Allow" # Cloud Shell needs internet access
@@ -294,12 +344,9 @@ resource "azurerm_storage_account" "cloud_shell" {
     virtual_network_subnet_ids = [azurerm_subnet.deployment_subnet.id]
   }
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-    purpose       = "cloud-shell-storage"
-  }
+  tags = merge(local.common_tags, {
+    purpose = "cloud-shell-storage"
+  })
 }
 
 # File share for Cloud Shell persistence
@@ -343,12 +390,9 @@ resource "azurerm_container_group" "cloud_shell_relay" {
     }
   }
 
-  tags = {
-    project_owner = "ootsuka"
-    author        = "Nehru"
-    environment   = "development"
-    purpose       = "cloud-shell-vnet-relay"
-  }
+  tags = merge(local.common_tags, {
+    purpose = "cloud-shell-vnet-relay"
+  })
 }
 
 # Get Azure AD info for access policies

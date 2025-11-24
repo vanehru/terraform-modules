@@ -6,7 +6,19 @@ resource "azurerm_storage_account" "storage" {
   account_tier             = var.storage_account_tier
   account_replication_type = var.storage_account_replication_type
   
-  public_network_access_enabled = var.storage_public_network_access_enabled
+  # Security configurations
+  public_network_access_enabled   = var.storage_public_network_access_enabled
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = true
+  https_traffic_only_enabled      = true
+  
+  blob_properties {
+    versioning_enabled = true
+    delete_retention_policy {
+      days = 7
+    }
+  }
   
   network_rules {
     default_action             = var.storage_network_default_action
@@ -96,10 +108,17 @@ resource "azurerm_linux_function_app" "function" {
   service_plan_id            = azurerm_service_plan.plan.id
   storage_account_name       = azurerm_storage_account.storage.name
   storage_account_access_key = azurerm_storage_account.storage.primary_access_key
-
+  
+  # Security configurations
+  https_only                 = true
+  client_certificate_enabled = false
+  
   app_settings = merge(
     {
-      "WEBSITE_RUN_FROM_PACKAGE" = "1"
+      "WEBSITE_RUN_FROM_PACKAGE"     = "1"
+      "FUNCTIONS_WORKER_RUNTIME"     = "python"
+      "FUNCTIONS_EXTENSION_VERSION"  = "~4"
+      "WEBSITE_CONTENTOVERVNET"      = "1"
     },
     var.app_settings
   )
@@ -113,17 +132,20 @@ resource "azurerm_linux_function_app" "function" {
   }
 
   site_config {
-    vnet_route_all_enabled = var.vnet_route_all_enabled
-
-    dynamic "application_stack" {
-      for_each = var.application_stack != null ? [var.application_stack] : []
-      content {
-        python_version              = lookup(application_stack.value, "python_version", null)
-        node_version                = lookup(application_stack.value, "node_version", null)
-        dotnet_version              = lookup(application_stack.value, "dotnet_version", null)
-        java_version                = lookup(application_stack.value, "java_version", null)
-        powershell_core_version     = lookup(application_stack.value, "powershell_core_version", null)
-      }
+    vnet_route_all_enabled              = var.vnet_route_all_enabled
+    ftps_state                          = "Disabled"
+    http2_enabled                       = true
+    minimum_tls_version                 = "1.2"
+    scm_minimum_tls_version            = "1.2"
+    use_32_bit_worker                  = false
+    
+    application_stack {
+      python_version = "3.11"
+    }
+    
+    cors {
+      allowed_origins = []
+      support_credentials = false
     }
   }
 
