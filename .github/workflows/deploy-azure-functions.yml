@@ -11,7 +11,8 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'your-function-app-name'
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'demo-rpg-aiapp/rpg-aiapp-dev/rpg-backend-main'
+  # Updated path after folder rename (rpg-aiapp-dev -> dev)
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'demo-rpg-aiapp/dev/rpg-backend-main'
   DOTNET_VERSION: '8.0.x'
 
 jobs:
@@ -29,7 +30,15 @@ jobs:
       - name: 'Resolve Project Dependencies Using Dotnet'
         shell: bash
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          echo "Validating function app source path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
+          if [ ! -d "${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}" ]; then
+            echo "ERROR: Directory '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}' does not exist." >&2
+            echo "Repository layout (top-level):" >&2
+            ls -1 >&2
+            exit 1
+          fi
+          pushd "./${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
+          echo "Listing project files:" && ls -1
           dotnet build --configuration Release --output ./output
           popd
 
