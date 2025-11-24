@@ -60,7 +60,7 @@ variable "deployments" {
   type = map(object({
     model_name    = string
     model_version = string
-    scale_type    = string
+    sku_name      = string
     capacity      = number
   }))
   default = {}

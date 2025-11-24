@@ -177,7 +177,7 @@ module "function_app" {
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
   app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "P1v2"
+  app_service_plan_sku             = "Y1"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
   enable_vnet_integration          = true
@@ -205,6 +205,11 @@ module "function_app" {
   }
 
   tags = local.common_tags
+
+  depends_on = [
+    azurerm_subnet.app_subnet,
+    azurerm_subnet.storage_subnet
+  ]
 }
 
 # Key Vault Module
@@ -269,7 +274,7 @@ module "sql_database" {
   minimum_tls_version           = "1.2"
   public_network_access_enabled = false
   sku_name                      = "Basic"
-  max_size_gb                   = 2
+  max_size_gb                   = 1
   allow_azure_services          = false
   subnet_id                     = azurerm_subnet.database_subnet.id
   enable_private_endpoint       = true
@@ -299,8 +304,8 @@ module "openai" {
     "gpt-4o" = {
       model_name    = "gpt-4o"
       model_version = "2024-08-06"
-      scale_type    = "Standard"
-      capacity      = 10
+      sku_name      = "GlobalStandard"
+      capacity      = 1
     }
   }
 
@@ -314,8 +319,8 @@ module "static_web_app" {
   static_web_app_name = "${local.name_prefix}-web"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  sku_tier            = "Standard"
-  sku_size            = "Standard"
+  sku_tier            = "Free"
+  sku_size            = "Free"
   function_app_id     = null  # Disable function app linking for now
 
   tags = local.common_tags
@@ -372,6 +377,11 @@ resource "azurerm_container_group" "cloud_shell_relay" {
 
   # Network configuration
   subnet_ids = [azurerm_subnet.deployment_subnet.id]
+
+  depends_on = [
+    azurerm_subnet.deployment_subnet,
+    azurerm_virtual_network.vnet
+  ]
 
   # Identity for Azure authentication
   identity {
