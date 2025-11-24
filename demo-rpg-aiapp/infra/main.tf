@@ -237,11 +237,11 @@ module "openai" {
   location                      = "Japan East"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
-  public_network_access_enabled = false
-  enable_private_endpoint       = true
-  private_endpoint_subnet_id    = azurerm_subnet.openai_subnet.id
-  create_private_dns_zone       = true
-  virtual_network_id            = azurerm_virtual_network.vnet.id
+  public_network_access_enabled = true
+  enable_private_endpoint       = false
+  private_endpoint_subnet_id    = null
+  create_private_dns_zone       = false
+  virtual_network_id            = null
 
   # Deploy current GPT models
   deployments = {
@@ -369,10 +369,10 @@ resource "azurerm_storage_account" "cloud_shell" {
   })
 }
 
-# File share for Cloud Shell persistence
-resource "azurerm_storage_share" "cloud_shell" {
+  # File share for Cloud Shell persistence
+  resource "azurerm_storage_share" "cloud_shell" {
   name                 = "cloudshell"
-  storage_account_name = azurerm_storage_account.cloud_shell.name
+  storage_account_id   = azurerm_storage_account.cloud_shell.id
   quota                = 6 # 6 GB for Cloud Shell
 }
 
