@@ -24,7 +24,6 @@ jobs:
   terraform:
     name: Provision Infra
     runs-on: ubuntu-latest
-    environment: azure_account
     timeout-minutes: 60
     steps:
       - name: Checkout
