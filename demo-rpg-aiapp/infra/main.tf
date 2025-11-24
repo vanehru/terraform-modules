@@ -173,11 +173,11 @@ module "function_app" {
   function_app_name                = "${local.name_prefix}-func"
   location                         = azurerm_resource_group.rg.location
   resource_group_name              = azurerm_resource_group.rg.name
-  storage_account_name             = "${replace(local.name_prefix, "-", "")}storacc123"
+  storage_account_name             = "${replace(local.name_prefix, "-", "")}funcstore"
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
   app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "Y1"
+  app_service_plan_sku             = "P1v2"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
   enable_vnet_integration          = true
@@ -268,9 +268,9 @@ module "sql_database" {
   sql_server_version            = "12.0"
   minimum_tls_version           = "1.2"
   public_network_access_enabled = false
-  sku_name                      = "GP_S_Gen5_2"
-  max_size_gb                   = 32
-  allow_azure_services          = true
+  sku_name                      = "Basic"
+  max_size_gb                   = 2
+  allow_azure_services          = false
   subnet_id                     = azurerm_subnet.database_subnet.id
   enable_private_endpoint       = true
   private_endpoint_subnet_id    = azurerm_subnet.database_subnet.id
@@ -284,7 +284,7 @@ module "sql_database" {
 module "openai" {
   source = "./modules/openai"
 
-  openai_account_name           = "${local.name_prefix}-openai"
+  openai_account_name           = "${local.name_prefix}-ai-svc"
   location                      = "Japan East"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
