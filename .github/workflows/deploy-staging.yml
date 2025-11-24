@@ -67,5 +67,14 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).tenantId }}
         run: |
+          # Read RG name from staging tfvars and import if it already exists
+          RG_NAME=$(awk -F= '/^azurerm_resource_group_name/ {gsub(/[" ]/,"",$2); print $2}' environments/staging.tfvars)
+          echo "Using resource group: $RG_NAME"
           terraform init
+          if az group show -n "$RG_NAME" >/dev/null 2>&1; then
+            echo "Resource group $RG_NAME exists. Importing into terraform state if not present."
+            terraform import -var-file="environments/staging.tfvars" azurerm_resource_group.rg /subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$RG_NAME || true
+          else
+            echo "Resource group $RG_NAME does not exist. Will be created by terraform."
+          fi
           terraform apply -var-file="environments/staging.tfvars" -auto-approve
