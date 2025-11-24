@@ -1,25 +1,22 @@
 name: Deploy Azure Functions
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-    paths:
-      - 'demo-rpg-aiapp/**'
+  workflow_run:
+    workflows: ["Deploy Staging Environment"]
+    types: [completed]
   workflow_dispatch:
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'your-function-app-name'
-  # Updated path after folder rename (rpg-aiapp-dev -> dev)
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'demo-rpg-aiapp/dev/rpg-backend-main'
   DOTNET_VERSION: '8.0.x'
 
 jobs:
   build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: 'Checkout GitHub Action'
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
@@ -27,7 +24,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 'Resolve Project Dependencies Using Dotnet'
+      - name: Build Function App
         shell: bash
         run: |
           echo "Validating function app source path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}"
@@ -42,26 +39,36 @@ jobs:
           dotnet build --configuration Release --output ./output
           popd
 
-      - name: 'Validate Azure Service Principal Secrets'
+      - name: Validate AZURE_ACCOUNT_CRED secret
         shell: bash
         run: |
-          missing=0
-          if [ -z "${{ secrets.ARM_CLIENT_ID }}" ]; then echo "::error title=Missing secret::ARM_CLIENT_ID is not set"; missing=1; fi
-          if [ -z "${{ secrets.ARM_CLIENT_SECRET }}" ]; then echo "::error title=Missing secret::ARM_CLIENT_SECRET is not set"; missing=1; fi
-          if [ -z "${{ secrets.ARM_SUBSCRIPTION_ID }}" ]; then echo "::error title=Missing secret::ARM_SUBSCRIPTION_ID is not set"; missing=1; fi
-          if [ -z "${{ secrets.ARM_TENANT_ID }}" ]; then echo "::error title=Missing secret::ARM_TENANT_ID is not set"; missing=1; fi
-          if [ $missing -eq 1 ]; then echo "One or more required Azure secrets are missing. Failing early."; exit 1; fi
-          echo "All required Azure SP secrets present. Proceeding to azure/login."
+          if [ -z "${{ secrets.AZURE_ACCOUNT_CRED }}" ]; then
+            echo "::error title=Missing secret::AZURE_ACCOUNT_CRED not set"
+            exit 1
+          fi
+          json='${{ secrets.AZURE_ACCOUNT_CRED }}'
+          for key in clientId clientSecret tenantId subscriptionId; do
+            val=$(echo "$json" | jq -r ."$key" 2>/dev/null || echo null)
+            if [ -z "$val" ] || [ "$val" = "null" ]; then
+              echo "::error title=Missing field::'$key' missing or null"
+              bad=1
+            fi
+          done
+          if [ "${bad:-0}" -ne 0 ]; then
+            echo "AZURE_ACCOUNT_CRED secret incomplete"
+            exit 1
+          fi
+          echo "AZURE_ACCOUNT_CRED secret validated."
 
-      - name: 'Azure Login (Service Principal)'
+      - name: Azure Login (JSON secret)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.ARM_CLIENT_ID }}
-          tenant-id: ${{ secrets.ARM_TENANT_ID }}
-          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-          client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          client-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientId }}
+          tenant-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).tenantId }}
+          subscription-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).subscriptionId }}
+          client-secret: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientSecret }}
 
-      - name: 'Run Azure Functions Action'
+      - name: Run Azure Functions Action
         uses: Azure/functions-action@v1
         id: fa
         with:
@@ -69,26 +76,14 @@ jobs:
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
-      - name: 'Configure App Settings'
+      - name: Configure App Settings
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           app-settings-json: |
             [
-              {
-                "name": "AZURE_OPENAI_ENDPOINT",
-                "value": "${{ secrets.AZURE_OPENAI_ENDPOINT }}",
-                "slotSetting": false
-              },
-              {
-                "name": "AZURE_OPENAI_KEY",
-                "value": "${{ secrets.AZURE_OPENAI_KEY }}",
-                "slotSetting": false
-              },
-              {
-                "name": "KEYVAULT_URL",
-                "value": "${{ secrets.KEYVAULT_URL }}",
-                "slotSetting": false
-              }
+              {"name": "AZURE_OPENAI_ENDPOINT", "value": "${{ secrets.AZURE_OPENAI_ENDPOINT }}", "slotSetting": false},
+              {"name": "AZURE_OPENAI_KEY", "value": "${{ secrets.AZURE_OPENAI_KEY }}", "slotSetting": false},
+              {"name": "KEYVAULT_URL", "value": "${{ secrets.KEYVAULT_URL }}", "slotSetting": false}
             ]
           connection-strings-json: '${{ secrets.CONNECTION_STRINGS }}'
