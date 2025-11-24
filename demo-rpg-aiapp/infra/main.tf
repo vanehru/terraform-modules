@@ -69,7 +69,7 @@ resource "azurerm_subnet" "app_subnet" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.app_subnet_cidr]
 
-  service_endpoints = ["Microsoft.Web", "Microsoft.KeyVault"]
+  service_endpoints = ["Microsoft.Web", "Microsoft.KeyVault", "Microsoft.Storage"]
 
   delegation {
     name = "delegation"
@@ -167,7 +167,7 @@ module "function_app" {
   storage_account_tier             = "Standard"
   storage_account_replication_type = "LRS"
   app_service_plan_name            = "${local.name_prefix}-appserviceplan"
-  app_service_plan_sku             = "P1v2"
+  app_service_plan_sku             = "Y1"
   create_managed_identity          = true
   vnet_route_all_enabled           = true
   enable_vnet_integration          = true
@@ -284,19 +284,13 @@ module "openai" {
   create_private_dns_zone       = true
   virtual_network_id            = azurerm_virtual_network.vnet.id
 
-  # Deploy GPT-4 and GPT-3.5-turbo models for gaming app
+  # Deploy current GPT models
   deployments = {
-    "gpt-4" = {
-      model_name    = "gpt-4"
-      model_version = "0613"
+    "gpt-4o" = {
+      model_name    = "gpt-4o"
+      model_version = "2024-08-06"
       scale_type    = "Standard"
       capacity      = 10
-    }
-    "gpt-35-turbo" = {
-      model_name    = "gpt-35-turbo"
-      model_version = "0613"
-      scale_type    = "Standard"
-      capacity      = 20
     }
   }
 
@@ -321,7 +315,7 @@ module "static_web_app" {
 
 # Storage Account for Cloud Shell with enhanced security
 resource "azurerm_storage_account" "cloud_shell" {
-  name                     = "cloudshellstorage123"
+  name                     = "${replace(local.name_prefix, "-", "")}cloudshell123"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
@@ -378,6 +372,11 @@ resource "azurerm_container_group" "cloud_shell_relay" {
     image  = "mcr.microsoft.com/azure-cli:latest"
     cpu    = "0.5"
     memory = "1.5"
+
+    ports {
+      port     = 80
+      protocol = "TCP"
+    }
 
     # Keep container running
     commands = [
