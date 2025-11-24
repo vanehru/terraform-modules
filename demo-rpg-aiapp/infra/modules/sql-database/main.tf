@@ -8,9 +8,12 @@ resource "azurerm_mssql_server" "sql_server" {
   administrator_login_password = var.admin_password
   minimum_tls_version          = var.minimum_tls_version
 
-  azuread_administrator {
-    login_username = var.azuread_admin_login
-    object_id      = var.azuread_admin_object_id
+  dynamic "azuread_administrator" {
+    for_each = var.azuread_admin_login != null && var.azuread_admin_object_id != null ? [1] : []
+    content {
+      login_username = var.azuread_admin_login
+      object_id      = var.azuread_admin_object_id
+    }
   }
 
   public_network_access_enabled = var.public_network_access_enabled
@@ -49,10 +52,12 @@ resource "azurerm_mssql_firewall_rule" "custom_rules" {
 
 # Virtual Network Rule (if subnet provided)
 resource "azurerm_mssql_virtual_network_rule" "vnet_rule" {
-  count     = var.subnet_id != null ? 1 : 0
+  count     = var.subnet_id != null && var.subnet_id != "" ? 1 : 0
   name      = "${var.sql_server_name}-vnet-rule"
   server_id = azurerm_mssql_server.sql_server.id
   subnet_id = var.subnet_id
+  
+  depends_on = [azurerm_mssql_server.sql_server]
 }
 
 # Private Endpoint for SQL Server

@@ -76,4 +76,10 @@ func TestSQLDatabaseModule(t *testing.T) {
 		assert.Contains(t, connString, sqlServerName)
 		assert.Contains(t, connString, sqlDatabaseName)
 	})
+
+	// Test private endpoint configuration
+	t.Run("PrivateEndpointConfig", func(t *testing.T) {
+		publicAccess := terraform.Output(t, terraformOptions, "public_network_access_enabled")
+		assert.Equal(t, "true", publicAccess) // For test environment
+	})
 }

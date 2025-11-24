@@ -351,9 +351,9 @@ resource "azurerm_storage_account" "cloud_shell" {
 
 # File share for Cloud Shell persistence
 resource "azurerm_storage_share" "cloud_shell" {
-  name               = "cloudshell"
-  storage_account_id = azurerm_storage_account.cloud_shell.id
-  quota              = 6 # 6 GB for Cloud Shell
+  name                 = "cloudshell"
+  storage_account_name = azurerm_storage_account.cloud_shell.name
+  quota                = 6 # 6 GB for Cloud Shell
 }
 
 # Container Instance for Cloud Shell VNet relay

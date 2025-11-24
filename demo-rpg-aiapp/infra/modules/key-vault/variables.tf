@@ -93,5 +93,4 @@ variable "secrets" {
   description = "Map of secrets to store in Key Vault (name => value)"
   type        = map(string)
   default     = {}
-  sensitive   = true
 }
