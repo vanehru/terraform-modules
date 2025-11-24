@@ -67,6 +67,7 @@ jobs:
           tenant-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).tenantId }}
           subscription-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).subscriptionId }}
           client-secret: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientSecret }}
+          enable-AzPSSession: true
 
       - name: Run Azure Functions Action
         uses: Azure/functions-action@v1

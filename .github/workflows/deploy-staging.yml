@@ -45,6 +45,7 @@ jobs:
           tenant-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).tenantId }}
           subscription-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).subscriptionId }}
           client-secret: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientSecret }}
+          enable-AzPSSession: true
 
       - name: Deploy Infrastructure
         working-directory: demo-rpg-aiapp/infra
