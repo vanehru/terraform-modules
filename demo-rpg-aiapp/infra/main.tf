@@ -304,7 +304,7 @@ module "openai" {
     "gpt-4o" = {
       model_name    = "gpt-4o"
       model_version = "2024-08-06"
-      sku_name      = "GlobalStandard"
+      scale_type    = "Standard"
       capacity      = 1
     }
   }
