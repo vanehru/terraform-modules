@@ -52,10 +52,10 @@ resource "azurerm_mssql_firewall_rule" "custom_rules" {
 
 # Virtual Network Rule (if subnet provided)
 resource "azurerm_mssql_virtual_network_rule" "vnet_rule" {
-  count     = var.subnet_id != null && var.subnet_id != "" ? 1 : 0
+  for_each  = var.subnet_id != null && var.subnet_id != "" ? { primary = var.subnet_id } : {}
   name      = "${var.sql_server_name}-vnet-rule"
   server_id = azurerm_mssql_server.sql_server.id
-  subnet_id = var.subnet_id
+  subnet_id = each.value
   
   depends_on = [azurerm_mssql_server.sql_server]
 }

@@ -224,7 +224,7 @@ Before deployment, configure these secrets:
 terraform-modules/
 ├── rpg-aiapp-infra/          # Infrastructure (separate)
 └── demo-rpg-aiapp/
-    └── rpg-aiapp-dev/        # Development code
+    └── dev/                  # Development code (renamed from rpg-aiapp-dev)
         ├── rpg-backend-python/
         └── rpg-frontend-main/
 ```

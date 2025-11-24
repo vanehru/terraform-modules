@@ -89,14 +89,14 @@ Automated scripts to configure the RPG application after Terraform infrastructur
 
 3. **Set up local development (Backend):**
    ```bash
-   cd rpg-aiapp-dev/rpg-backend-python
+   cd demo-rpg-aiapp/dev/rpg-backend-python
    cp local.settings.json.example local.settings.json
    # Edit local.settings.json if needed for local dev
    ```
 
 4. **Set up local development (Frontend):**
    ```bash
-   cd ../rpg-frontend-main
+   cd demo-rpg-aiapp/dev/rpg-frontend-main
    cp .env.example .env.local
    # Edit .env.local with http://localhost:7071/api for local backend
    ```
@@ -127,7 +127,7 @@ az functionapp config appsettings set \
 
 ```bash
 # Edit .env.production manually
-cd rpg-aiapp-dev/rpg-frontend-main
+cd demo-rpg-aiapp/dev/rpg-frontend-main
 cat > .env.production <<EOF
 VUE_APP_API_BASE_URL=https://<function-app-name>.azurewebsites.net/api
 VUE_APP_ENVIRONMENT=production
@@ -195,7 +195,7 @@ az functionapp config appsettings list \
 
 **Check Frontend Config:**
 ```bash
-cat rpg-aiapp-dev/rpg-frontend-main/.env.production
+cat demo-rpg-aiapp/dev/rpg-frontend-main/.env.production
 ```
 
 **Test Backend:**
@@ -276,9 +276,9 @@ curl https://<function-app-name>.azurewebsites.net/api/SELECTEVENTS
 
 # View current config
 terraform output  # In rpg-aiapp-infra/
-cat rpg-aiapp-dev/rpg-frontend-main/.env.production
+cat demo-rpg-aiapp/dev/rpg-frontend-main/.env.production
 
 # Reset to template
-cp rpg-aiapp-dev/rpg-frontend-main/.env.production.template \
-   rpg-aiapp-dev/rpg-frontend-main/.env.production
+cp demo-rpg-aiapp/dev/rpg-frontend-main/.env.production.template \
+   demo-rpg-aiapp/dev/rpg-frontend-main/.env.production
 ```

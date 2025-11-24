@@ -39,6 +39,8 @@ resource "azurerm_cognitive_deployment" "deployment" {
     type     = each.value.scale_type
     capacity = each.value.capacity
   }
+
+  version_upgrade_option = "OnceNewDefaultVersionAvailable"
 }
 
 # Private Endpoint for OpenAI

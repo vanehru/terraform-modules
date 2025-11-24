@@ -10,7 +10,7 @@ This guide explains how to configure the RPG application after infrastructure de
 
 1. **Copy the example settings file:**
    ```bash
-   cd rpg-aiapp-dev/rpg-backend-python
+   cd demo-rpg-aiapp/dev/rpg-backend-python
    cp local.settings.json.example local.settings.json
    cp .env.example .env
    ```
@@ -108,7 +108,7 @@ resource "azurerm_linux_function_app" "main" {
 
 1. **Copy the environment file:**
    ```bash
-   cd rpg-aiapp-dev/rpg-frontend-main
+   cd demo-rpg-aiapp/dev/rpg-frontend-main
    cp .env.example .env.local
    ```
 
@@ -141,7 +141,7 @@ resource "azurerm_linux_function_app" "main" {
 FUNCTION_APP_URL=$(terraform output -raw function_app_url)
 
 # Update production environment file
-cat > rpg-aiapp-dev/rpg-frontend-main/.env.production <<EOF
+cat > demo-rpg-aiapp/dev/rpg-frontend-main/.env.production <<EOF
 VUE_APP_API_BASE_URL=${FUNCTION_APP_URL}/api
 VUE_APP_ENVIRONMENT=production
 EOF
@@ -228,7 +228,7 @@ echo "✅ Backend configured successfully"
 # Configure Frontend
 echo ""
 echo "Configuring Frontend..."
-cat > ../rpg-aiapp-dev/rpg-frontend-main/.env.production <<EOF
+cat > ../demo-rpg-aiapp/dev/rpg-frontend-main/.env.production <<EOF
 VUE_APP_API_BASE_URL=${FUNCTION_APP_URL}/api
 VUE_APP_ENVIRONMENT=production
 EOF
@@ -240,7 +240,7 @@ read -p "Do you want to build and deploy the frontend now? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Building frontend..."
-    cd ../rpg-aiapp-dev/rpg-frontend-main
+    cd ../demo-rpg-aiapp/dev/rpg-frontend-main
     npm install
     npm run build
     echo "✅ Frontend built successfully"
@@ -314,7 +314,7 @@ Example Key Vault reference:
 ### Backend
 ```bash
 # Test locally
-cd rpg-aiapp-dev/rpg-backend-python
+cd demo-rpg-aiapp/dev/rpg-backend-python
 func start
 
 # Test endpoints
@@ -324,7 +324,7 @@ curl http://localhost:7071/api/SELECTEVENTS
 ### Frontend
 ```bash
 # Test locally
-cd rpg-aiapp-dev/rpg-frontend-main
+cd demo-rpg-aiapp/dev/rpg-frontend-main
 npm run serve
 
 # Build for production
@@ -393,7 +393,7 @@ az functionapp config appsettings set \
   --settings SETTING_NAME=value
 
 # View current frontend config
-cat rpg-aiapp-dev/rpg-frontend-main/.env.production
+cat demo-rpg-aiapp/dev/rpg-frontend-main/.env.production
 
 # Rebuild frontend
 cd rpg-aiapp-dev/rpg-frontend-main

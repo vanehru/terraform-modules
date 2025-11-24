@@ -94,7 +94,7 @@ cd /path/to/demo-rpg-aiapp
 ### Backend
 
 ```bash
-cd rpg-aiapp-dev/rpg-backend-python
+cd demo-rpg-aiapp/dev/rpg-backend-python
 
 # Copy template to actual config
 cp local.settings.json.example local.settings.json
@@ -109,7 +109,7 @@ func start
 ### Frontend
 
 ```bash
-cd rpg-aiapp-dev/rpg-frontend-main
+cd demo-rpg-aiapp/dev/rpg-frontend-main
 
 # Copy template
 cp .env.example .env.local
@@ -196,7 +196,7 @@ curl https://<function-app-name>.azurewebsites.net/api/SELECTEVENTS
 
 ```bash
 # View production config
-cat rpg-aiapp-dev/rpg-frontend-main/.env.production
+cat demo-rpg-aiapp/dev/rpg-frontend-main/.env.production
 
 # Should show:
 # VUE_APP_API_BASE_URL=https://your-func-app.azurewebsites.net/api
@@ -248,7 +248,7 @@ az functionapp config appsettings set \
 **Frontend:**
 ```bash
 # Manually create .env.production
-cat > rpg-frontend-main/.env.production <<EOF
+cat > demo-rpg-aiapp/dev/rpg-frontend-main/.env.production <<EOF
 VUE_APP_API_BASE_URL=https://your-func.azurewebsites.net/api
 EOF
 
