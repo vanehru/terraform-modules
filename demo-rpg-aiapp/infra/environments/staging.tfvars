@@ -1,5 +1,5 @@
 azurerm_resource_group_location = "Japan East"
-azurerm_resource_group_name = "rg-rpgai-staging-001"
+azurerm_resource_group_name = "rpg-aiapp-staging-rg"
 environment = "staging"
 project_owner = "dev-team"
 author = "Nehru"
