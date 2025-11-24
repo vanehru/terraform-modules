@@ -41,11 +41,7 @@ jobs:
       - name: Azure Login (JSON secret)
         uses: azure/login@v2
         with:
-          client-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientId }}
-          tenant-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).tenantId }}
-          subscription-id: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).subscriptionId }}
-          client-secret: ${{ fromJSON(secrets.AZURE_ACCOUNT_CRED).clientSecret }}
-          enable-AzPSSession: true
+          creds: ${{ secrets.AZURE_ACCOUNT_CRED }}
 
       - name: Deploy Infrastructure
         working-directory: demo-rpg-aiapp/infra
