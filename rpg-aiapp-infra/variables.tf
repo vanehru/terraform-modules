@@ -55,3 +55,9 @@ variable "deployment_subnet_cidr" {
   type        = string
   default     = "172.16.6.0/24"
 }
+
+variable "enable_function_app" {
+  description = "Enable Function App deployment (Y1 Consumption with public access)"
+  type        = bool
+  default     = true
+}

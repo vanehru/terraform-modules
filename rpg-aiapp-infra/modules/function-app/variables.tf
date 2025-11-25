@@ -71,16 +71,10 @@ variable "vnet_integration_subnet_id" {
   default     = null
 }
 
-variable "application_stack" {
-  description = "Application stack configuration for Function App"
-  type = object({
-    python_version          = optional(string)
-    node_version            = optional(string)
-    dotnet_version          = optional(string)
-    java_version            = optional(string)
-    powershell_core_version = optional(string)
-  })
-  default = null
+variable "python_version" {
+  description = "Python version for Function App"
+  type        = string
+  default     = "3.9"
 }
 
 variable "tags" {

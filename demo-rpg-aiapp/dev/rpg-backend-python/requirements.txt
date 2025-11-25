@@ -2,5 +2,4 @@ azure-functions
 azure-identity
 azure-keyvault-secrets
 openai
-pyodbc
-passlib
+pymssql

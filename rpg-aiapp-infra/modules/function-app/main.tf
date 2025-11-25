@@ -99,7 +99,9 @@ resource "azurerm_linux_function_app" "function" {
 
   app_settings = merge(
     {
-      "WEBSITE_RUN_FROM_PACKAGE" = "1"
+      "WEBSITE_RUN_FROM_PACKAGE"       = "1"
+      "FUNCTIONS_WORKER_RUNTIME"       = "python"
+      "FUNCTIONS_EXTENSION_VERSION"    = "~4"
     },
     var.app_settings
   )
@@ -115,15 +117,8 @@ resource "azurerm_linux_function_app" "function" {
   site_config {
     vnet_route_all_enabled = var.vnet_route_all_enabled
 
-    dynamic "application_stack" {
-      for_each = var.application_stack != null ? [var.application_stack] : []
-      content {
-        python_version              = lookup(application_stack.value, "python_version", null)
-        node_version                = lookup(application_stack.value, "node_version", null)
-        dotnet_version              = lookup(application_stack.value, "dotnet_version", null)
-        java_version                = lookup(application_stack.value, "java_version", null)
-        powershell_core_version     = lookup(application_stack.value, "powershell_core_version", null)
-      }
+    application_stack {
+      python_version = var.python_version
     }
   }
 

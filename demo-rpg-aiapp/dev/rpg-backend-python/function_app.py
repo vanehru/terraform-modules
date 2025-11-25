@@ -5,9 +5,10 @@ import logging
 from typing import Dict, List, Any, Optional
 import azure.functions as func
 from openai import AzureOpenAI
-import pyodbc
-from keyvault_helper import get_sql_connection_string
+import pymssql
+from keyvault_helper import get_sql_connection_string, get_openai_endpoint, get_openai_key
 from password_helper import hash_password, verify_password
+from create_tables import create_tables
 
 # Constants
 DEFAULT_CHAR_ID = 1
@@ -19,6 +20,59 @@ MIN_PARAMETER_VALUE = 0
 MAX_PARAMETER_VALUE = 100
 
 app = func.FunctionApp()
+
+
+def get_db_connection():
+    """Get database connection using pymssql."""
+    connection_string = get_sql_connection_string()
+    # Parse connection string for pymssql
+    params = {'port': 1433, 'tds_version': '7.4'}
+    for part in connection_string.split(';'):
+        if '=' in part:
+            key, value = part.split('=', 1)
+            key = key.strip()
+            if key == 'Server':
+                # Remove tcp: prefix and extract server/port
+                server_part = value.replace('tcp:', '').strip()
+                if ',' in server_part:
+                    server, port = server_part.split(',')
+                    params['server'] = server
+                    params['port'] = int(port)
+                else:
+                    params['server'] = server_part
+            elif key == 'Database':
+                params['database'] = value
+            elif key == 'Uid':
+                params['user'] = value
+            elif key == 'Pwd':
+                params['password'] = value
+    
+    return pymssql.connect(**params)
+
+
+@app.route(route="init", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def initialize_database(req: func.HttpRequest) -> func.HttpResponse:
+    """Initialize database tables."""
+    logging.info("Database initialization requested")
+    
+    try:
+        success = create_tables()
+        if success:
+            return func.HttpResponse(
+                "Database tables initialized successfully",
+                status_code=200
+            )
+        else:
+            return func.HttpResponse(
+                "Failed to initialize database tables",
+                status_code=500
+            )
+    except Exception as e:
+        logging.error(f"Database initialization error: {str(e)}")
+        return func.HttpResponse(
+            "Database initialization error occurred",
+            status_code=500
+        )
 
 
 def row_to_player_dict(row) -> Dict[str, Any]:
@@ -64,8 +118,16 @@ def openai_function(req: func.HttpRequest) -> func.HttpResponse:
     """MBTI personality scoring using Azure OpenAI GPT-4."""
     logging.info("OpenAI function processed a request.")
     
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-    api_key = os.environ.get("AZURE_OPENAI_KEY")
+    try:
+        endpoint = get_openai_endpoint()
+        api_key = get_openai_key()
+    except Exception as e:
+        logging.error(f"Failed to retrieve OpenAI credentials from Key Vault: {str(e)}")
+        return func.HttpResponse(
+            "OpenAI configuration error. Please check Key Vault settings.",
+            status_code=500
+        )
+    
     deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
     
     if not endpoint:
@@ -206,13 +268,13 @@ def select_player(req: func.HttpRequest) -> func.HttpResponse:
         
         with conn.cursor() as cursor:
             sql = """
-                SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
+                SELECT UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4,
                        CurrentEventId, CurrentSeq
                 FROM PlayerData 
-                WHERE UserId = ?
+                WHERE UserId = %s
             """
             
-            cursor.execute(sql, user_id)
+            cursor.execute(sql, (user_id,))
             rows = cursor.fetchall()
             
             result_list = [row_to_player_dict(row) for row in rows]
@@ -282,7 +344,7 @@ def select_events(req: func.HttpRequest) -> func.HttpResponse:
         conn = pyodbc.connect(connection_string)
         
         with conn.cursor() as cursor:
-            sql = "SELECT EventId, Seq, EventType, EventText FROM EventData"
+            sql = "SELECT EventId, Seq, Speaker, Text FROM EventTable"
             
             cursor.execute(sql)
             rows = cursor.fetchall()
@@ -349,13 +411,13 @@ def update_player(req: func.HttpRequest) -> func.HttpResponse:
         with conn.cursor() as cursor:
             sql = """
                 UPDATE PlayerData 
-                SET Exp = ?, Parameter1 = ?, Parameter2 = ?, Parameter3 = ?, Parameter4 = ?,
-                    CurrentEventId = ?, CurrentSeq = ?
-                WHERE UserId = ? AND CharId = ?
+                SET Exp = %s, Parameter1 = %s, Parameter2 = %s, Parameter3 = %s, Parameter4 = %s,
+                    CurrentEventId = %s, CurrentSeq = %s
+                WHERE UserId = %s AND CharId = %s
             """
             
-            cursor.execute(sql, exp, param1, param2, param3, param4, 
-                          current_event_id, current_seq, user_id, char_id)
+            cursor.execute(sql, (exp, param1, param2, param3, param4, 
+                          current_event_id, current_seq, user_id, char_id))
             conn.commit()
             
             affected_rows = cursor.rowcount
@@ -388,12 +450,13 @@ def insert_user(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    user_id = req_body.get("UserId")
+    user_id = req_body.get("ID") or req_body.get("UserId")
     password = req_body.get("Password")
+    name = req_body.get("Name") or user_id
     
-    if not user_id or not password:
+    if not user_id or not password or not name:
         return func.HttpResponse(
-            "UserId と Password は必須です。",
+            "ID、パスワード、または表示名が設定されていません。",
             status_code=400
         )
     
@@ -413,31 +476,30 @@ def insert_user(req: func.HttpRequest) -> func.HttpResponse:
     
     conn = None
     try:
-        # Hash password using PBKDF2
-        hashed_password = hash_password(password)
+        # Hash password using PBKDF2 (returns bytes directly, compatible with C# backend)
+        hashed_password_bytes = hash_password(password)
         
-        connection_string = get_sql_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         
         with conn.cursor() as cursor:
-            sql = "INSERT INTO UserData (UserId, Password) VALUES (?, ?)"
-            
-            cursor.execute(sql, user_id, hashed_password)
+            sql = "INSERT INTO Users (UserId, PasswordHash, UserName) VALUES (%s, %s, %s)"
+            cursor.execute(sql, (user_id, hashed_password_bytes, name))
             conn.commit()
         
         return func.HttpResponse(
             "ユーザー登録が完了しました。",
             status_code=200
         )
-    except pyodbc.IntegrityError:
+    except pymssql.IntegrityError:
         return func.HttpResponse(
             "このUserIdは既に登録されています。",
             status_code=409
         )
     except Exception as e:
-        logging.error(f"ユーザー登録中にエラーが発生しました: {str(e)}")
+        error_msg = f"ユーザー登録中にエラーが発生しました: {str(e)}"
+        logging.error(error_msg)
         return func.HttpResponse(
-            "ユーザー登録エラーが発生しました。",
+            f"ユーザー登録エラーが発生しました。詳細: {str(e)}",
             status_code=500
         )
     finally:
@@ -474,16 +536,11 @@ def insert_player(req: func.HttpRequest) -> func.HttpResponse:
         
         with conn.cursor() as cursor:
             sql = """
-                INSERT INTO PlayerData 
-                (UserId, CharId, Exp, Parameter1, Parameter2, Parameter3, Parameter4, 
-                 CurrentEventId, CurrentSeq)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO PlayerData (UserId)
+                VALUES (%s)
             """
             
-            cursor.execute(sql, user_id, char_id, DEFAULT_EXP, 
-                          DEFAULT_PARAMETER_VALUE, DEFAULT_PARAMETER_VALUE,
-                          DEFAULT_PARAMETER_VALUE, DEFAULT_PARAMETER_VALUE,
-                          DEFAULT_EVENT_ID, DEFAULT_EVENT_SEQ)
+            cursor.execute(sql, (user_id,))
             conn.commit()
         
         return func.HttpResponse(
@@ -514,24 +571,23 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
-    user_id = req_body.get("UserId")
+    user_id = req_body.get("ID") or req_body.get("UserId")
     password = req_body.get("Password")
     
     if not user_id or not password:
         return func.HttpResponse(
-            "UserId と Password は必須です。",
+            "IDまたはパスワードが未入力です。",
             status_code=400
         )
     
     conn = None
     try:
-        connection_string = get_sql_connection_string()
-        conn = pyodbc.connect(connection_string)
+        conn = get_db_connection()
         
         with conn.cursor() as cursor:
-            sql = "SELECT Password FROM UserData WHERE UserId = ?"
+            sql = "SELECT PasswordHash FROM Users WHERE UserId = %s"
             
-            cursor.execute(sql, user_id)
+            cursor.execute(sql, (user_id,))
             row = cursor.fetchone()
         
         if not row:
@@ -540,10 +596,13 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=401
             )
         
-        stored_hash = row[0]
+        # Get stored hash as bytes (VARBINARY from database)
+        stored_hash_bytes = row[0]
+        if not isinstance(stored_hash_bytes, bytes):
+            stored_hash_bytes = bytes(stored_hash_bytes)
         
-        # Verify password using PBKDF2
-        if verify_password(password, stored_hash):
+        # Verify password using PBKDF2 (compatible with C# backend)
+        if verify_password(password, stored_hash_bytes):
             return func.HttpResponse(
                 json.dumps({"result": "success", "UserId": user_id}),
                 mimetype="application/json",
