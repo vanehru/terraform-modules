@@ -27,3 +27,18 @@ output "secret_ids" {
   description = "Map of secret names to their IDs"
   value       = { for k, v in azurerm_key_vault_secret.secrets : k => v.id }
 }
+
+output "secret_names" {
+  description = "List of secret names stored in Key Vault"
+  value       = keys(azurerm_key_vault_secret.secrets)
+}
+
+output "access_policy_count" {
+  description = "Number of access policies configured"
+  value       = length(var.access_policies)
+}
+
+output "network_acls_default_action" {
+  description = "Default action for network ACLs"
+  value       = var.network_acls_default_action
+}

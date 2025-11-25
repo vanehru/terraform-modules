@@ -91,7 +91,7 @@ resource "azurerm_subnet" "deployment_subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.deployment_subnet_cidr]
-  service_endpoints    = ["Microsoft.Storage"]  # Required for Cloud Shell storage account
+  service_endpoints    = ["Microsoft.Storage"] # Required for Cloud Shell storage account
 
   delegation {
     name = "container-delegation"
@@ -117,52 +117,56 @@ resource "random_password" "sql_admin_password" {
   special = true
 }
 
-# Function App Module - Commented out due to quota limitations in test environment
-# module "function_app" {
-#   source = "./modules/function-app"
-#
-#   function_app_name                = "demo-rpg-func"
-#   location                         = azurerm_resource_group.rg.location
-#   resource_group_name              = azurerm_resource_group.rg.name
-#   storage_account_name             = "demorpgstoracc123"
-#   storage_account_tier             = "Standard"
-#   storage_account_replication_type = "LRS"
-#   app_service_plan_name            = "demo-rpg-appserviceplan"
-#   app_service_plan_sku             = "Y1"
-#   create_managed_identity          = true
-#   vnet_route_all_enabled           = true
-#   enable_vnet_integration          = true
-#   vnet_integration_subnet_id       = azurerm_subnet.app_subnet.id
-#
-#   # Storage Account Private Endpoint
-#   storage_public_network_access_enabled = false
-#   storage_network_default_action        = "Deny"
-#   storage_allowed_subnet_ids            = [azurerm_subnet.app_subnet.id, azurerm_subnet.storage_subnet.id]
-#   enable_storage_private_endpoint       = true
-#   storage_private_endpoint_subnet_id    = azurerm_subnet.storage_subnet.id
-#   create_storage_private_dns_zone       = true
-#   storage_virtual_network_id            = azurerm_virtual_network.vnet.id
-#
-#   app_settings = {
-#     "CUSTOM_SETTING"         = "value"
-#     "KEY_VAULT_URI"          = module.key_vault.key_vault_uri
-#     "SQL_CONNECTION_SECRET"  = "sql-connection-string"
-#     "OPENAI_ENDPOINT_SECRET" = "openai-endpoint"
-#     "OPENAI_KEY_SECRET"      = "openai-key"
-#   }
-#
-#   tags = {
-#     project_owner = "ootsuka"
-#     author        = "Nehru"
-#     environment   = "development"
-#   }
-# }
+# Function App Module - Consumption Plan (Y1) with .NET stack
+module "function_app" {
+  source = "./modules/function-app"
+
+  function_app_name                = "demo-rpg-func-${random_string.suffix.result}"
+  location                         = azurerm_resource_group.rg.location
+  resource_group_name              = azurerm_resource_group.rg.name
+  storage_account_name             = "rpgfuncstor${random_string.suffix.result}"
+  storage_account_tier             = "Standard"
+  storage_account_replication_type = "LRS"
+  app_service_plan_name            = "demo-rpg-consumption-plan"
+  app_service_plan_sku             = "Y1" # Consumption plan - cost-effective
+
+  # Managed Identity for Key Vault access (works on Consumption plan)
+  create_managed_identity = true
+
+  # VNet integration NOT supported on Consumption plan (Y1)
+  enable_vnet_integration = false
+  vnet_route_all_enabled  = false
+
+  # Storage Account - Public access required for Consumption plan
+  storage_public_network_access_enabled = true
+  storage_network_default_action        = "Allow"
+  enable_storage_private_endpoint       = false
+
+  # .NET stack for C++ code
+  application_stack = {
+    dotnet_version = "8.0"
+  }
+
+  app_settings = {
+    "WEBSITE_RUN_FROM_PACKAGE" = "1"
+    "KEY_VAULT_URI"            = module.key_vault.key_vault_uri
+    "SQL_CONNECTION_SECRET"    = "sql-connection-string"
+    "OPENAI_ENDPOINT_SECRET"   = "openai-endpoint"
+    "OPENAI_KEY_SECRET"        = "openai-key"
+  }
+
+  tags = {
+    project_owner = "ootsuka"
+    author        = "Nehru"
+    environment   = "development"
+  }
+}
 
 # Key Vault Module
 module "key_vault" {
   source = "./modules/key-vault"
 
-  key_vault_name              = "demo-rpgkv123"
+  key_vault_name              = "demo-rpgkv-${random_string.suffix.result}"
   location                    = azurerm_resource_group.rg.location
   resource_group_name         = azurerm_resource_group.rg.name
   tenant_id                   = data.azurerm_client_config.current.tenant_id
@@ -174,11 +178,12 @@ module "key_vault" {
   allowed_ip_addresses        = [data.http.current_ip.response_body]
 
   access_policies = [
-    # Function App access policy removed due to quota limitations
-    # {
-    #   object_id          = module.function_app.function_app_identity_principal_id
-    #   secret_permissions = ["Get", "List"]
-    # },
+    # Function App access policy
+    {
+      object_id          = module.function_app.function_app_identity_principal_id
+      secret_permissions = ["Get", "List"]
+    },
+    # Administrator access policy - full management permissions
     {
       object_id          = data.azurerm_client_config.current.object_id
       secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
@@ -245,14 +250,14 @@ module "sql_database" {
 module "openai" {
   source = "./modules/openai"
 
-  openai_account_name = "rpg-openai-${random_string.suffix.result}"
+  openai_account_name           = "rpg-openai-${random_string.suffix.result}"
   location                      = "East US"
   resource_group_name           = azurerm_resource_group.rg.name
   sku_name                      = "S0"
   public_network_access_enabled = true  # Changed to true for testing - private endpoint has timing issues
-  enable_private_endpoint       = false  # Disabled due to Azure resource graph timing issues
+  enable_private_endpoint       = false # Disabled due to Azure resource graph timing issues
   private_endpoint_subnet_id    = azurerm_subnet.openai_subnet.id
-  create_private_dns_zone       = false  # Not needed without private endpoint
+  create_private_dns_zone       = false # Not needed without private endpoint
   virtual_network_id            = azurerm_virtual_network.vnet.id
 
   # OpenAI model deployments commented out - all versions deprecated as of 11/14/2025
@@ -270,13 +275,17 @@ module "openai" {
 module "static_web_app" {
   source = "./modules/static-web-app"
 
-  static_web_app_name = "rpg-gaming-web"
+  static_web_app_name = "rpg-gaming-web-${random_string.suffix.result}"
   location            = "East Asia"
   resource_group_name = azurerm_resource_group.rg.name
   sku_tier            = "Standard"
   sku_size            = "Standard"
-  # function_app_id linkage removed to avoid count dependency issues
-  # You can link the function app manually after deployment if needed
+
+  # Link to Function App backend
+  # Note: Set to null for initial deployment to avoid count dependency issues
+  # After initial deployment, you can link manually or uncomment the line below
+  # function_app_id = module.function_app.function_app_id
+  function_app_id = null
 
   tags = {
     project_owner = "ootsuka"

@@ -17,10 +17,10 @@ resource "azurerm_key_vault" "kv" {
   dynamic "access_policy" {
     for_each = var.access_policies
     content {
-      tenant_id          = var.tenant_id
-      object_id          = access_policy.value.object_id
-      secret_permissions = access_policy.value.secret_permissions
-      key_permissions    = access_policy.value.key_permissions
+      tenant_id               = var.tenant_id
+      object_id               = access_policy.value.object_id
+      secret_permissions      = access_policy.value.secret_permissions
+      key_permissions         = access_policy.value.key_permissions
       certificate_permissions = access_policy.value.certificate_permissions
     }
   }

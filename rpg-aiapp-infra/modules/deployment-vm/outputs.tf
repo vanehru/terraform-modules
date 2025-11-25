@@ -31,12 +31,12 @@ output "bastion_host_dns" {
 output "connection_command" {
   description = "Command to connect to the VM"
   value = var.os_type == "Linux" ? (
-    var.enable_public_ip ? 
-      "ssh ${var.admin_username}@${azurerm_public_ip.vm_pip[0].ip_address}" : 
-      "Connect via Azure Bastion or VPN"
-  ) : (
-    var.enable_public_ip ? 
-      "mstsc /v:${azurerm_public_ip.vm_pip[0].ip_address}" : 
-      "Connect via Azure Bastion or VPN"
+    var.enable_public_ip ?
+    "ssh ${var.admin_username}@${azurerm_public_ip.vm_pip[0].ip_address}" :
+    "Connect via Azure Bastion or VPN"
+    ) : (
+    var.enable_public_ip ?
+    "mstsc /v:${azurerm_public_ip.vm_pip[0].ip_address}" :
+    "Connect via Azure Bastion or VPN"
   )
 }

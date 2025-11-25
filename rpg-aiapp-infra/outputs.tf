@@ -88,10 +88,20 @@ output "deployment_instructions" {
   EOT
 }
 
-# Function App output commented out due to quota limitations
+# Function App outputs - uncomment after quota approval
 # output "function_app_name" {
 #   description = "Name of the Function App"
 #   value       = module.function_app.function_app_name
+# }
+#
+# output "function_app_url" {
+#   description = "URL of the Function App"
+#   value       = "https://${module.function_app.function_app_default_hostname}"
+# }
+#
+# output "function_app_identity_principal_id" {
+#   description = "Principal ID of the Function App managed identity"
+#   value       = module.function_app.function_app_identity_principal_id
 # }
 
 output "static_web_app_url" {

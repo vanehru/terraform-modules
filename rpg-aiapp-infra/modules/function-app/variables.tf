@@ -36,9 +36,14 @@ variable "app_service_plan_name" {
 }
 
 variable "app_service_plan_sku" {
-  description = "SKU for the App Service Plan (e.g., P1v2, S1, Y1)"
+  description = "SKU for the App Service Plan (e.g., Y1 for Consumption, EP1 for Elastic Premium, P1v2 for Premium)"
   type        = string
-  default     = "P1v2"
+  default     = "Y1"
+
+  validation {
+    condition     = can(regex("^(Y1|EP1|EP2|EP3|P1v2|P2v2|P3v2|S1|S2|S3)$", var.app_service_plan_sku))
+    error_message = "SKU must be a valid App Service Plan SKU. Use Y1 for Consumption (no VNet integration), EP1-EP3 for Elastic Premium, or P1v2-P3v2 for Premium."
+  }
 }
 
 variable "create_managed_identity" {
@@ -54,13 +59,13 @@ variable "app_settings" {
 }
 
 variable "vnet_route_all_enabled" {
-  description = "Route all traffic through VNet"
+  description = "Route all traffic through VNet (only supported on Premium/Elastic Premium plans)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_vnet_integration" {
-  description = "Enable VNet integration for Function App"
+  description = "Enable VNet integration for Function App (only supported on Premium/Elastic Premium plans, not on Consumption Y1)"
   type        = bool
   default     = false
 }

@@ -31,9 +31,14 @@ variable "admin_username" {
 }
 
 variable "admin_password" {
-  description = "Administrator password for SQL Server"
+  description = "Administrator password for SQL Server (must be at least 8 characters with complexity requirements)"
   type        = string
   sensitive   = true
+  
+  validation {
+    condition     = length(var.admin_password) >= 8
+    error_message = "SQL Server password must be at least 8 characters long."
+  }
 }
 
 variable "minimum_tls_version" {
@@ -55,9 +60,14 @@ variable "azuread_admin_object_id" {
 }
 
 variable "public_network_access_enabled" {
-  description = "Enable public network access to SQL Server"
+  description = "Enable public network access to SQL Server (should be false for production with private endpoint)"
   type        = bool
   default     = false
+  
+  validation {
+    condition     = var.public_network_access_enabled == false || var.enable_private_endpoint == false
+    error_message = "For security, if private endpoint is enabled, public network access should be disabled."
+  }
 }
 
 variable "collation" {
@@ -106,9 +116,9 @@ variable "subnet_id" {
 }
 
 variable "enable_private_endpoint" {
-  description = "Enable private endpoint for SQL Server"
+  description = "Enable private endpoint for SQL Server (recommended for production)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "private_endpoint_subnet_id" {

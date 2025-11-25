@@ -5,9 +5,9 @@ resource "azurerm_storage_account" "storage" {
   location                 = var.location
   account_tier             = var.storage_account_tier
   account_replication_type = var.storage_account_replication_type
-  
+
   public_network_access_enabled = var.storage_public_network_access_enabled
-  
+
   network_rules {
     default_action             = var.storage_network_default_action
     bypass                     = ["AzureServices"]
@@ -78,6 +78,12 @@ resource "azurerm_service_plan" "plan" {
   tags = var.tags
 }
 
+# Local variable to determine if plan supports VNet integration
+locals {
+  is_consumption_plan = var.app_service_plan_sku == "Y1"
+  supports_vnet       = !local.is_consumption_plan && var.enable_vnet_integration
+}
+
 # Managed Identity for the Function App
 resource "azurerm_user_assigned_identity" "func_identity" {
   count               = var.create_managed_identity ? 1 : 0
@@ -113,16 +119,17 @@ resource "azurerm_linux_function_app" "function" {
   }
 
   site_config {
-    vnet_route_all_enabled = var.vnet_route_all_enabled
+    # VNet routing only supported on Premium/Elastic Premium plans
+    vnet_route_all_enabled = local.supports_vnet ? var.vnet_route_all_enabled : false
 
     dynamic "application_stack" {
       for_each = var.application_stack != null ? [var.application_stack] : []
       content {
-        python_version              = lookup(application_stack.value, "python_version", null)
-        node_version                = lookup(application_stack.value, "node_version", null)
-        dotnet_version              = lookup(application_stack.value, "dotnet_version", null)
-        java_version                = lookup(application_stack.value, "java_version", null)
-        powershell_core_version     = lookup(application_stack.value, "powershell_core_version", null)
+        python_version          = lookup(application_stack.value, "python_version", null)
+        node_version            = lookup(application_stack.value, "node_version", null)
+        dotnet_version          = lookup(application_stack.value, "dotnet_version", null)
+        java_version            = lookup(application_stack.value, "java_version", null)
+        powershell_core_version = lookup(application_stack.value, "powershell_core_version", null)
       }
     }
   }
@@ -130,9 +137,9 @@ resource "azurerm_linux_function_app" "function" {
   tags = var.tags
 }
 
-# VNet Integration for Function App
+# VNet Integration for Function App (only for Premium/Elastic Premium plans)
 resource "azurerm_app_service_virtual_network_swift_connection" "function_vnet_integration" {
-  count          = var.enable_vnet_integration ? 1 : 0
+  count          = local.supports_vnet ? 1 : 0
   app_service_id = azurerm_linux_function_app.function.id
   subnet_id      = var.vnet_integration_subnet_id
 }

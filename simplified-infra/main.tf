@@ -38,64 +38,6 @@ resource "azurerm_mssql_server" "sql" {
 
 resource "azurerm_mssql_database" "db" {
   name           = var.sql_database_name
-  server_id      = azurerm_mssql_server.sql.id
+  // Legacy monolithic resources removed in favor of modular configuration (see main-modular.tf).
+  // File kept intentionally empty (comment only) to prevent duplicate resource definitions.
   sku_name       = "Basic"
-  max_size_gb    = 2
-  zone_redundant = false
-  tags           = var.tags
-}
-
-# Key Vault (public for now; restrict later in Phase 2)
-resource "azurerm_key_vault" "kv" {
-  name                       = var.key_vault_name
-  location                   = var.location
-  resource_group_name        = azurerm_resource_group.rg.name
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  purge_protection_enabled   = true
-  soft_delete_retention_days = 7
-  rbac_authorization_enabled = true
-  tags                       = var.tags
-}
-
-data "azurerm_client_config" "current" {}
-
-# Azure OpenAI Account (no network ACLs / endpoints yet)
-resource "azurerm_cognitive_account" "openai" {
-  name                = var.openai_account_name
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = var.location
-  kind                = "OpenAI"
-  sku_name            = "S0"
-  tags                = var.tags
-  public_network_access_enabled = true
-}
-
-resource "azurerm_cognitive_deployment" "openai_model" {
-  name                 = var.openai_deployment_name
-  cognitive_account_id = azurerm_cognitive_account.openai.id
-
-  model {
-    format  = "OpenAI"
-    name    = var.openai_model_name
-    version = var.openai_model_version
-  }
-
-  sku {
-    name     = var.openai_scale_type
-    capacity = var.openai_capacity
-  }
-
-  version_upgrade_option = "OnceNewDefaultVersionAvailable"
-}
-
-# Static Web App (Free) - must use supported region
-resource "azurerm_static_web_app" "static" {
-  name                = var.static_site_name
-  location            = "eastasia"  # japaneast not supported; using closest region
-  resource_group_name = azurerm_resource_group.rg.name
-  sku_size            = "Free"
-  tags                = var.tags
-}
-
-# Outputs consolidated in outputs.tf
