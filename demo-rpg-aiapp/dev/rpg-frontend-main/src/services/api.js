@@ -48,14 +48,14 @@ apiClient.interceptors.response.use(
  * API endpoints
  */
 export const API_ENDPOINTS = {
-  LOGIN: '/LOGIN',
-  INSERT_USER: '/INSERTUSER',
-  INSERT_PLAYER: '/INSERTPLAYER',
-  SELECT_PLAYER: '/SELECTPLAYER',
-  SELECT_ALL_PLAYER: '/SELECTALLPLAYER',
-  SELECT_EVENTS: '/SELECTEVENTS',
-  UPDATE: '/UPDATE',
-  OPENAI: '/OpenAI',
+  LOGIN: '/api/login',
+  INSERT_USER: '/api/insertuser',
+  INSERT_PLAYER: '/api/insertplayer',
+  SELECT_PLAYER: '/api/selectplayer',
+  SELECT_ALL_PLAYER: '/api/selectallplayer',
+  SELECT_EVENTS: '/api/selectevents',
+  UPDATE: '/api/update',
+  OPENAI: '/api/openai',
 };
 
 /**
